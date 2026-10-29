@@ -14,6 +14,13 @@ import CryptoKit
         var config=Configuration(cameras:[camera],slots:[0:LayoutSlot(cameraID:camera.id,channelID:channel.id)])
         try config.validate()
         let json=try JSONEncoder().encode(config)
+        var large=config;large.layout=20;large.layoutColumns=5;large.slots=[19:LayoutSlot(cameraID:camera.id,channelID:channel.id)]
+        large.favorites=[FavoriteLayout(name:"Portaria",rows:4,columns:5,slots:large.slots)]
+        try large.validate()
+        let largeBack=try BackupCodec.decode(JSONEncoder().encode(large),password:nil).configuration
+        try require(largeBack.rows==4 && largeBack.columns==5 && largeBack.favorites==large.favorites,"Custom layout and favorites survive backup")
+        var invalidFavorite=large;invalidFavorite.favorites?[0].slots[20]=LayoutSlot(cameraID:camera.id,channelID:channel.id)
+        try expectFailure("Favorite rejects slots outside its layout"){try invalidFavorite.validate()}
         let plain=try BackupCodec.decode(json,password:nil)
         try require(plain.configuration.cameras==[camera] && plain.passwords.isEmpty,"JSON configuration round-trip without credentials")
         let payload=BackupPayload(configuration:config,passwords:[camera.id.uuidString:"test-only-not-a-real-password"])
@@ -49,6 +56,20 @@ import CryptoKit
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent("vigia-state-tests-"+UUID().uuidString)
         defer{try? FileManager.default.removeItem(at:folder)}
         let secrets=MemorySecrets(),state=AppState(directory:folder,secrets:secrets)
+        try require(!state.locked && !state.hasLockPassword,"App starts unlocked without a lock password")
+        try state.configureLock(current:"",newPassword:"local-test-password")
+        try require(state.hasLockPassword && !(secrets.values[AppLockCodec.id] ?? "").contains("local-test-password"),"Lock verifier stored without plaintext password")
+        let lockedState=AppState(directory:folder,secrets:secrets)
+        try require(lockedState.locked,"App starts locked when a password is registered")
+        try expectFailure("Incorrect unlock password rejected"){try lockedState.unlock("wrong-password")}
+        try require(lockedState.locked,"Incorrect password leaves app locked")
+        try lockedState.unlock("local-test-password")
+        try require(!lockedState.locked,"Correct password unlocks app")
+        try expectFailure("Incorrect old password cannot change lock"){try lockedState.configureLock(current:"wrong-password",newPassword:"new-test-password")}
+        try lockedState.configureLock(current:"local-test-password",newPassword:"new-test-password")
+        try expectFailure("Old password no longer unlocks after change"){lockedState.locked=true;try lockedState.unlock("local-test-password")}
+        try lockedState.unlock("new-test-password");try lockedState.removeLock(current:"new-test-password")
+        try require(!lockedState.hasLockPassword && secrets.values[AppLockCodec.id]==nil,"Password removal requires current password and clears verifier")
         try state.applyImport(payload,replace:true)
         try require(state.config.cameras==[camera] && secrets.values[camera.id]==payload.passwords[camera.id.uuidString],"Restore replaces configuration and credentials")
         let onDisk=try String(contentsOf:state.file)
@@ -68,6 +89,30 @@ import CryptoKit
         var removedChannel=camera;removedChannel.channels=[]
         try state.upsert(removedChannel,password:"test-secret")
         try require(state.config.slots.isEmpty,"Editing channels removes stale mosaic references")
+        try state.upsert(camera,password:"fixture")
+        let other=Channel(name:"Outro canal",uri:"rtsp://127.0.0.1:18554/other")
+        var withTwo=camera;withTwo.channels.append(other);try state.upsert(withTwo,password:"fixture")
+        let s1=VideoSession(camera:withTwo,channel:channel,source:MediaInput(uri:channel.uri))
+        let s2=VideoSession(camera:withTwo,channel:other,source:MediaInput(uri:other.uri))
+        state.sessions=[0:s1,1:s2];state.config.slots=[0:LayoutSlot(cameraID:camera.id,channelID:channel.id),1:LayoutSlot(cameraID:camera.id,channelID:other.id)]
+        state.swapSlots(0,1)
+        try require(state.sessions[0] === s2 && state.sessions[1] === s1 && state.config.slots[1]?.channelID==channel.id && state.selectedSlot==1,"Swapping occupied panels keeps sessions and persists positions")
+        state.swapSlots(1,2)
+        try require(state.sessions[1]==nil && state.sessions[2] === s1 && state.config.slots[1]==nil && state.config.slots[2]?.channelID==channel.id,"Dragging to an empty panel moves the existing session")
+        let savedAfterSwap=AppState(directory:folder,secrets:secrets)
+        try require(savedAfterSwap.config.slots==state.config.slots,"Panel swap survives configuration reload")
+        s1.active=true;s2.active=true
+        try state.storeFavorite(name:"Portaria",id:nil)
+        let favoriteID=state.config.favorites![0].id
+        try require(state.isFavoriteActive(state.config.favorites![0]),"Favorite highlights when all saved cameras are active in their positions")
+        try state.setFavoriteName(favoriteID,name:"Entrada")
+        try require(state.config.favorites?[0].name=="Entrada" && state.config.favorites?[0].slots.count==2,"Favorite rename preserves saved panels")
+        try expectFailure("Duplicate favorite name rejected"){try state.storeFavorite(name:"entrada",id:nil)}
+        s2.active=false
+        try require(!state.isFavoriteActive(state.config.favorites![0]),"Favorite is not highlighted when a saved camera is inactive")
+        try state.storeFavorite(name:"Entrada",id:favoriteID)
+        try require(state.config.favorites?.count==1 && state.config.favorites?[0].id==favoriteID && state.config.favorites?[0].slots.count==1,"Confirmed overwrite preserves favorite identity and uses active cameras")
+        try expectFailure("Blank favorite name rejected"){try state.setFavoriteName(favoriteID,name:"  ")}
         try serviceChecks()
         if let index=CommandLine.arguments.firstIndex(of:"--service-port"),index+1<CommandLine.arguments.count,let port=Int(CommandLine.arguments[index+1]) {
             try await serviceIntegration(port:port)

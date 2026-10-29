@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build the independently licensed ARM64 media backend from pinned FFmpeg source."""
+"""Build the independently licensed macOS media backend from pinned FFmpeg source."""
 import argparse, hashlib, json, os
 from pathlib import Path
 import subprocess
 import tarfile
 
-FLAGS = ['--arch=arm64','--target-os=darwin','--cc=clang','--disable-autodetect','--disable-doc','--disable-debug',
+FLAGS = ['--target-os=darwin','--cc=clang','--disable-autodetect','--disable-doc','--disable-debug',
  '--disable-ffplay','--disable-gpl','--disable-nonfree','--disable-everything','--enable-ffmpeg','--enable-ffprobe',
  '--enable-pthreads','--enable-videotoolbox','--enable-audiotoolbox','--enable-securetransport','--enable-zlib',
  '--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox',
@@ -53,16 +53,20 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--arch',choices=['arm64','x86_64'],default='arm64')
     args=parser.parse_args()
     source=args.source.resolve();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     patch(source)
     build=out/'objects';build.mkdir(exist_ok=True)
-    subprocess.run([str(source/'configure'),*FLAGS],cwd=build,check=True)
+    flags = [f'--arch={args.arch}', *FLAGS]
+    if args.arch == 'x86_64':
+        flags += ['--enable-cross-compile', '--disable-x86asm', '--extra-cflags=-arch x86_64', '--extra-ldflags=-arch x86_64']
+    subprocess.run([str(source/'configure'),*flags],cwd=build,check=True)
     subprocess.run(['make','-j8'],cwd=build,check=True)
     import shutil
     for name in ('ffmpeg','ffprobe'):shutil.copy2(build/name,out/name)
     shutil.copy2(source/'COPYING.LGPLv2.1',out/'COPYING.LGPLv2.1')
-    (out/'BUILD.json').write_text(json.dumps({'upstream':'https://github.com/FFmpeg/FFmpeg/tree/n8.1.2','flags':FLAGS,'modification':'ONVIF replay clock range; scripts/build_ffmpeg.py','architecture':'arm64'},indent=2))
+    (out/'BUILD.json').write_text(json.dumps({'upstream':'https://github.com/FFmpeg/FFmpeg/tree/n8.1.2','flags':flags,'modification':'ONVIF replay clock range; scripts/build_ffmpeg.py','architecture':args.arch},indent=2))
     # Distribute corresponding modified source, including configure/build instructions.
     (source/'VIGIA-BUILD.json').write_text((out/'BUILD.json').read_text())
     with tarfile.open(out/'ffmpeg-8.1.2-vigia-source.tar.gz','w:gz') as tar:

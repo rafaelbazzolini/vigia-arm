@@ -102,6 +102,7 @@ extension CoreTests {
         try ServiceVideoWire.keepAlive(control)
         try require(control.writes.count==1 && control.writes[0][0]==0xa1,"Legacy keep-alive requests status and consumes acknowledgement")
         let source=MediaInput(uri:"",service:ServiceMediaSource(host:"127.0.0.1",port:12000,username:"operator",password:"fixture-password",channel:0,substream:true))
+        try require(source.recordingSource.service?.substream==false && source.service?.substream==true,"Recording selects main service stream without changing preview")
         try require(source.arguments().contains("dhav") && source.arguments().contains("pipe:0") && !source.arguments().joined().contains("fixture-password"),"FFmpeg receives DHAV through stdin without service credentials in process arguments")
     }
     @MainActor static func serviceMediaIntegration(port:Int,directory:URL)async throws{
@@ -130,6 +131,11 @@ extension CoreTests {
         manual.stop()
         for _ in 0..<70{if !manual.running{break};try await Task.sleep(nanoseconds:100_000_000)}
         try require(!manual.running && manual.state=="Arquivo salvo","Stopping live service recording signals EOF and finalizes MKV normally")
+        let mp4=RecordingJob(destination:directory.appendingPathComponent("service-recording.mp4"))
+        try mp4.start(input:source,duration:2)
+        for _ in 0..<120{if !mp4.running{break};try await Task.sleep(nanoseconds:100_000_000)}
+        if mp4.running{mp4.stop()}
+        try require(!mp4.running && mp4.state=="Arquivo salvo","MP4 service recording finalizes successfully")
     }
     static func serviceIntegration(port:Int) async throws {
         let names = try await Task.detached {

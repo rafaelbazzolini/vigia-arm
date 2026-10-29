@@ -1,4 +1,4 @@
-name: Native ARM checks
+name: macOS checks
 on:
   push:
   pull_request:
@@ -12,6 +12,8 @@ jobs:
       - name: Compile independent app
         run: |
           swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macosx14.0 Sources/*.swift -o /tmp/VigiaARM -framework SwiftUI -framework AppKit -framework AVFoundation -framework Security -framework CryptoKit
+      - name: Compile Intel target
+        run: swiftc -swift-version 5 -parse-as-library -O -target x86_64-apple-macosx14.0 Sources/*.swift -o /tmp/VigiaIntel -framework SwiftUI -framework AppKit -framework AVFoundation -framework Security -framework CryptoKit
       - name: Core and local TCP integration checks
         run: python3 scripts/run_checks.py
       - name: Check Python syntax

@@ -26,6 +26,7 @@ struct Camera: Codable, Identifiable, Equatable {
     var searchEndpoint = ""
     // Optional for backward-compatible decoding of existing version-1 backups.
     var service: ServiceSettings?
+    var serviceProvider: String?
     var deviceEndpoint: String { "\(tls ? "https" : "http")://\(host.contains(":") ? "[\(host)]" : host):\(httpPort)/onvif/device_service" }
     func validate() throws {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 160,
@@ -41,6 +42,7 @@ struct Camera: Codable, Identifiable, Equatable {
                 throw AppError.message("Porta de serviço ou lista de canais inválida.")
             }
         }
+        if let serviceProvider, !["standard","intelbras"].contains(serviceProvider){throw AppError.message("Tipo de serviço inválido.")}
         for channel in channels {
             if let index=channel.serviceIndex {
                 guard service != nil,(0..<255).contains(index),channel.uri.isEmpty,channel.profileToken.isEmpty,
@@ -85,6 +87,7 @@ struct Camera: Codable, Identifiable, Equatable {
     }
 }
 struct LayoutSlot: Codable, Equatable { var cameraID: UUID; var channelID: UUID }
+struct FavoriteLayout:Codable,Identifiable,Equatable {var id=UUID();var name:String;var rows:Int;var columns:Int;var slots:[Int:LayoutSlot]}
 struct Configuration: Codable {
     var format = "vigia-arm"
     var version = 1
@@ -93,14 +96,21 @@ struct Configuration: Codable {
     var layout = 4
     var slots: [Int: LayoutSlot] = [:]
     var quality = "Equilibrado"
+    var layoutColumns:Int?
+    var favorites:[FavoriteLayout]?
+    var columns:Int {layoutColumns ?? Int(Double(layout).squareRoot())}
+    var rows:Int {columns > 0 ? (layout+columns-1)/columns : 0}
     func validate() throws {
         guard format == "vigia-arm", version == 1 else { throw AppError.message("Formato ou versão de configuração não suportado. Use um arquivo exportado pelo Vigia ARM.") }
         guard cameras.count <= 1000, Set(cameras.map(\.id)).count == cameras.count,
-              [1,4,9,16].contains(layout), ["Econômico","Equilibrado","Detalhado"].contains(quality),
-              slots.keys.allSatisfy({(0..<16).contains($0)}) else { throw AppError.message("A configuração contém limites ou identificadores inválidos.") }
+              (1...64).contains(layout), (1...8).contains(columns), rows <= 8, ["Econômico","Equilibrado","Detalhado"].contains(quality),
+              slots.keys.allSatisfy({(0..<64).contains($0)}), (favorites?.count ?? 0)<=100 else { throw AppError.message("A configuração contém limites ou identificadores inválidos.") }
         for camera in cameras { try camera.validate() }
         for slot in slots.values {
             guard cameras.contains(where: {$0.id == slot.cameraID && $0.channels.contains(where: {$0.id == slot.channelID})}) else { throw AppError.message("O mosaico contém um canal inexistente.") }
+        }
+        for favorite in favorites ?? [] {
+            guard !favorite.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,favorite.name.count<=160,(1...8).contains(favorite.rows),(1...8).contains(favorite.columns),favorite.slots.keys.allSatisfy({(0..<(favorite.rows*favorite.columns)).contains($0)}),favorite.slots.values.allSatisfy({slot in cameras.contains(where:{$0.id==slot.cameraID && $0.channels.contains(where:{$0.id==slot.channelID})})}) else{throw AppError.message("Favorito inválido ou com canal inexistente.")}
         }
     }
 }
@@ -155,6 +165,26 @@ enum BackupCodec {
         catch { throw AppError.message("Arquivo inválido. O formato do SIM Play não é o formato do Vigia ARM.") }
         try config.validate()
         return BackupPayload(configuration:config,passwords:[:])
+    }
+}
+
+// Local UI lock verifier. The equipment configuration remains separate.
+enum AppLockCodec {
+    static let id=UUID(uuidString:"6C65319B-AB93-4C40-ADAF-1EE29F9C3E80")!
+    private struct Verifier:Codable{var version:Int;var salt:Data;var digest:Data}
+    static func make(_ password:String)throws->String{
+        guard password.count>=8,password.utf8.count<=4096 else{throw AppError.message("Use uma senha de 8 a 4096 bytes.")}
+        var salt=Data(count:16)
+        guard salt.withUnsafeMutableBytes({SecRandomCopyBytes(kSecRandomDefault,16,$0.baseAddress!)}) == errSecSuccess else{throw AppError.message("Não foi possível criar a senha.")}
+        let key=try BackupCodec.key(password:password,salt:salt,iterations:300_000)
+        let digest=Data(HMAC<SHA256>.authenticationCode(for:Data("vigia-local-lock-v1".utf8),using:key))
+        return try JSONEncoder().encode(Verifier(version:1,salt:salt,digest:digest)).base64EncodedString()
+    }
+    static func verify(_ password:String,stored:String)throws->Bool{
+        guard password.utf8.count<=4096,let data=Data(base64Encoded:stored),data.count<=1024,
+              let verifier=try? JSONDecoder().decode(Verifier.self,from:data),verifier.version==1,verifier.salt.count==16,verifier.digest.count==32 else{throw AppError.message("Não foi possível ler a proteção local no Chaves do macOS.")}
+        let key=try BackupCodec.key(password:password,salt:verifier.salt,iterations:300_000)
+        return HMAC<SHA256>.isValidAuthenticationCode(verifier.digest,authenticating:Data("vigia-local-lock-v1".utf8),using:key)
     }
 }
 

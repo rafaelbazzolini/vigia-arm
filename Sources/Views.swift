@@ -1,4 +1,12 @@
+#if arch(arm64)
+private let architectureLabel = "Apple Silicon • nativo"
+private let architectureCode = "ARM64"
+#elseif arch(x86_64)
+private let architectureLabel = "Intel • nativo"
+private let architectureCode = "INTEL"
+#endif
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 
 // Explicit alias selects the stable property wrapper on SDKs that also expose a State macro.
@@ -24,14 +32,27 @@ struct RootView:View {
     @ViewState private var showBackup=false
     @ViewState private var importRequest:ImportRequest?
     @ViewState private var page="Ao vivo"
+    @ViewState private var dragToken=UUID().uuidString
     var body:some View {
         HStack(spacing:0){
             VStack(alignment:.leading,spacing:18){
-                HStack(spacing:10){Image(systemName:"eye.circle.fill").font(.system(size:33)).foregroundStyle(accent);VStack(alignment:.leading,spacing:2){Text("VIGIA").font(.system(size:21,weight:.bold,design:.rounded));Text("ARM • "+(Bundle.main.object(forInfoDictionaryKey:"VigiaVersion") as? String ?? "1.0.0")).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(.secondary)}}.padding(.top,12)
+                HStack(spacing:10){Image(systemName:"eye.circle.fill").font(.system(size:33)).foregroundStyle(accent);Text("VIGIA").font(.system(size:21,weight:.bold,design:.rounded))}.padding(.top,12)
                 TextField("Buscar equipamento",text:$state.search).textFieldStyle(.roundedBorder)
-                HStack{Text("EQUIPAMENTOS").font(.system(size:10,weight:.bold)).foregroundStyle(.secondary);Spacer();Text("\(state.config.cameras.count)").font(.caption.monospacedDigit()).foregroundStyle(accent)}
                 ScrollView{
                     VStack(alignment:.leading,spacing:10){
+                        HStack{Text("FAVORITOS").font(.system(size:10,weight:.bold)).foregroundStyle(.secondary);Spacer();Button{state.saveFavorite()}label:{Image(systemName:"plus")}.buttonStyle(.plain).help("Salvar favorito")}
+                        if (state.config.favorites ?? []).isEmpty{Text("Nenhum favorito salvo").font(.caption).foregroundStyle(.tertiary)}
+                        ForEach(state.config.favorites ?? []){favorite in
+                            Button{state.loadFavorite(favorite);page="Ao vivo"}label:{HStack{Image(systemName:"star.fill").foregroundStyle(accent);Text(favorite.name).lineLimit(1);Spacer()}.padding(.horizontal,7).padding(.vertical,7).frame(maxWidth:.infinity).background(state.isFavoriteActive(favorite) ? accent.opacity(0.22):.clear,in:RoundedRectangle(cornerRadius:6)).contentShape(Rectangle())}.buttonStyle(.plain)
+                            .contextMenu{
+                                Button("Abrir"){state.loadFavorite(favorite);page="Ao vivo"}
+                                Button("Salvar mosaico atual…"){state.overwriteFavorite(favorite)}
+                                Button("Renomear…"){state.renameFavorite(favorite)}
+                                Button("Excluir",role:.destructive){state.deleteFavorite(favorite.id)}
+                            }
+                        }
+                        Divider().padding(.vertical,4)
+                        HStack{Text("EQUIPAMENTOS").font(.system(size:10,weight:.bold)).foregroundStyle(.secondary);Spacer();Text("\(state.config.cameras.count)").font(.caption.monospacedDigit()).foregroundStyle(accent)}
                         ForEach(state.cameras){camera in
                             DisclosureGroup{
                                 ForEach(camera.channels){channel in
@@ -50,20 +71,21 @@ struct RootView:View {
                 Button{editing=Camera()}label:{Label("Adicionar equipamento",systemImage:"plus")}.buttonStyle(PrimaryButtonStyle()).frame(maxWidth:.infinity)
                 Button{showDiscovery=true;state.discover()}label:{Label("Descobrir na rede",systemImage:"network")}.buttonStyle(.bordered).frame(maxWidth:.infinity)
                 Divider()
-                HStack(spacing:5){Circle().fill(MediaBackend.executable==nil ? Color.orange:accent).frame(width:6,height:6);Text(MediaBackend.executable==nil ? "Mecanismo ausente":"Apple Silicon • nativo").font(.system(size:10)).foregroundStyle(.secondary)}
-                Text("Cliente independente • RTSP / ONVIF").font(.system(size:9)).foregroundStyle(.tertiary)
+                HStack(spacing:5){Circle().fill(MediaBackend.executable==nil ? Color.orange:accent).frame(width:6,height:6);Text(MediaBackend.executable==nil ? "Mecanismo ausente":architectureLabel).font(.system(size:10)).foregroundStyle(.secondary)}
+                Text("Versão "+(Bundle.main.object(forInfoDictionaryKey:"VigiaVersion") as? String ?? "1.0.0")).font(.system(size:9)).foregroundStyle(.tertiary)
             }.padding(18).frame(width:232).background(panel)
             Rectangle().fill(.white.opacity(0.07)).frame(width:1)
             VStack(spacing:0){
                 HStack(spacing:22){
-                    ForEach(["Ao vivo","Gravações","Backups"],id:\.self){name in Button{page=name}label:{VStack(spacing:9){Text(name).font(.system(size:13,weight:page==name ? .semibold:.regular)).foregroundStyle(page==name ? .white:.secondary);Rectangle().fill(page==name ? accent:.clear).frame(height:2)}}.buttonStyle(.plain).fixedSize()}
+                    ForEach(["Ao vivo","Gravações","Backups"],id:\.self){name in Button{page=name}label:{Text(name).font(.system(size:13,weight:page==name ? .semibold:.regular)).foregroundStyle(page==name ? .white:.secondary).overlay(alignment:.bottom){Rectangle().fill(page==name ? accent:.clear).frame(height:2).offset(y:11)}}.buttonStyle(.plain).fixedSize()}
+                    Button{if state.hasLockPassword{state.locked=true}else{page="Configurações"}}label:{Label("Bloquear",systemImage:"lock.fill").font(.system(size:11,weight:.semibold)).foregroundStyle(accent).padding(.horizontal,10).padding(.vertical,6).background(accent.opacity(0.10),in:RoundedRectangle(cornerRadius:6)).overlay(RoundedRectangle(cornerRadius:6).stroke(accent.opacity(0.55),lineWidth:1))}.buttonStyle(.plain).help("Bloquear o Vigia")
                     Spacer()
                     if state.busy{ProgressView().controlSize(.small)}
-                    Text("ARM64").font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(accent).padding(.horizontal,9).padding(.vertical,5).background(accent.opacity(0.1),in:Capsule())
-                    Menu{Button("Abrir vídeo local…"){state.openLocalRecording();page="Ao vivo"};Button("Abrir pasta de configurações"){NSWorkspace.shared.open(state.directory)};Button("Sobre o Vigia ARM"){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Vigia ARM",.applicationVersion:"1.0.0",.credits:NSAttributedString(string:"Cliente independente RTSP / ONVIF para Apple Silicon.\nVídeo com FFmpeg LGPL 2.1+. Sem código ou SDK do SIM Play.\nGravações remotas e PTZ dependem do suporte do equipamento.")])}}label:{Image(systemName:"ellipsis.circle").font(.title3)}.menuStyle(.borderlessButton).frame(width:25)
+                    Text(architectureCode).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(accent).padding(.horizontal,9).padding(.vertical,5).background(accent.opacity(0.1),in:Capsule())
+                    Menu{Button("Configurações…"){page="Configurações"};Divider();Button("Abrir vídeo local…"){state.openLocalRecording();page="Ao vivo"};Button("Abrir pasta de configurações"){NSWorkspace.shared.open(state.directory)};Button("Sobre o Vigia ARM"){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Vigia ARM",.applicationVersion:"1.0.0",.credits:NSAttributedString(string:"Cliente RTSP / ONVIF para macOS.\nVídeo com FFmpeg LGPL 2.1+. Sem código ou SDK do SIM Play.\nGravações remotas e PTZ dependem do suporte do equipamento.")])}}label:{Image(systemName:"gearshape.fill").font(.title3)}.menuStyle(.borderlessButton).frame(width:25).help("Menu de opções")
                 }.padding(.horizontal,25).padding(.top,20).padding(.bottom,12)
                 Divider().overlay(.white.opacity(0.04))
-                if page=="Ao vivo"{liveView}else if page=="Gravações"{RecordingsView()}else{backupView}
+                if page=="Ao vivo"{liveView}else if page=="Gravações"{RecordingsView()}else if page=="Configurações"{LockSettingsView()}else{backupView}
                 HStack{Circle().fill(state.busy ? Color.orange:accent).frame(width:5,height:5);Text(state.status).lineLimit(1);Spacer();Text("\(state.sessions.count) painel(is) aberto(s)").monospacedDigit()}.font(.system(size:10)).foregroundStyle(.secondary).padding(.horizontal,20).padding(.vertical,10).background(panel.opacity(0.8))
             }
         }.background(base).preferredColorScheme(.dark).frame(minWidth:1120,minHeight:720)
@@ -80,33 +102,35 @@ struct RootView:View {
             HStack{
                 VStack(alignment:.leading,spacing:4){Text("Sua visão, em tempo real.").font(.system(size:22,weight:.semibold));Text("Selecione um painel e abra um canal na lista à esquerda.").font(.system(size:11)).foregroundStyle(.secondary)}
                 Spacer()
-                Picker("Qualidade",selection:$state.config.quality){ForEach(["Econômico","Equilibrado","Detalhado"],id:\.self){Text($0)}}.labelsHidden().frame(width:135).onChange(of:state.config.quality){ do{try state.save()}catch{state.report(error)}}
-                HStack(spacing:2){ForEach([1,4,9,16],id:\.self){count in Button{state.setLayout(count)}label:{Text("\(count)").font(.system(size:11,weight:.medium)).frame(width:27,height:24).background(state.config.layout==count ? accent.opacity(0.2):.clear,in:RoundedRectangle(cornerRadius:5))}.buttonStyle(.plain)}}.padding(3).background(panel,in:RoundedRectangle(cornerRadius:7))
+                HStack(spacing:8){Button{state.stopAll()}label:{Image(systemName:"stop.circle")}.help("Desconectar câmeras");Button{state.snapshot()}label:{Image(systemName:"camera")}.help("Salvar imagem PNG").disabled(!state.canSnapshot);Button{state.record()}label:{Label(state.current?.recording?.running == true ? "Finalizar":"Gravar",systemImage:"record.circle")}.disabled(state.current==nil)}.buttonStyle(.bordered).controlSize(.small)
+                Picker("Qualidade",selection:$state.config.quality){ForEach(["Econômico","Equilibrado","Detalhado"],id:\.self){Text($0)}}.labelsHidden().frame(width:135).help("Qualidade da prévia; aplicada ao abrir ou reconectar um canal.").onChange(of:state.config.quality){ do{try state.save();state.status="Qualidade salva. Reconecte os canais abertos para aplicá-la."}catch{state.report(error)}}
+                HStack(spacing:2){ForEach([1,4,9,12,16,20,36,64],id:\.self){count in Button{state.setLayout(count,columns:[12:4,20:5][count])}label:{Text("\(count)").font(.system(size:11,weight:.medium)).frame(width:27,height:24).background(state.config.layout==count ? accent.opacity(0.2):.clear,in:RoundedRectangle(cornerRadius:5))}.buttonStyle(.plain)};Button{state.customLayout()}label:{Image(systemName:"rectangle.split.3x3")}.help("Linhas e colunas personalizadas")}.padding(3).background(panel,in:RoundedRectangle(cornerRadius:7))
             }
             if state.config.cameras.isEmpty {
                 VStack(spacing:18){Image(systemName:"viewfinder").font(.system(size:60,weight:.ultraLight)).foregroundStyle(accent);Text("Seu monitoramento começa aqui").font(.system(size:23,weight:.semibold));Text("Cadastre uma câmera ou gravador por ONVIF ou RTSP.\nSeus acessos ficam no Chaves do macOS.").multilineTextAlignment(.center).font(.system(size:13)).foregroundStyle(.secondary);HStack{Button("Adicionar equipamento"){editing=Camera()}.buttonStyle(PrimaryButtonStyle());Button("Importar configuração"){if let bytes=state.pickImport(){importRequest=ImportRequest(data:bytes)}}}}.frame(maxWidth:.infinity,maxHeight:.infinity).background(panel.opacity(0.5),in:RoundedRectangle(cornerRadius:14))
             }else{
-                let columns=Int(Double(state.config.layout).squareRoot())
+                let columns=state.config.columns
                 GeometryReader{geo in
-                    let rows=columns
+                    let rows=state.config.rows
                     LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:8),count:columns),spacing:8){
                         ForEach(0..<state.config.layout,id:\.self){slot in
-                            Group{if let session=state.sessions[slot]{VideoTile(session:session,slot:slot)}else{EmptyTile(slot:slot)}}
-                                .frame(height:max(90,(geo.size.height-Double(rows-1)*8)/Double(rows)))
+                            Group{if let session=state.sessions[slot]{VideoTile(session:session,slot:slot).onDrag{NSItemProvider(object:"\(dragToken):\(slot)" as NSString)}}else{EmptyTile(slot:slot)}}
+                                .frame(height:max(40,(geo.size.height-Double(rows-1)*8)/Double(rows)))
                                 .overlay(RoundedRectangle(cornerRadius:8).stroke(state.selectedSlot==slot ? accent:Color.white.opacity(0.09),lineWidth:state.selectedSlot==slot ? 2:1))
                                 .onTapGesture{state.selectedSlot=slot}
+                                .onDrop(of:[UTType.plainText],isTargeted:nil){providers in
+                                    guard let provider=providers.first(where:{$0.canLoadObject(ofClass:NSString.self)}) else{return false}
+                                    let token=dragToken
+                                    _=provider.loadObject(ofClass:NSString.self){object,_ in
+                                        guard let value=object as? String,value.hasPrefix(token+":"),let source=Int(value.dropFirst(token.count+1)) else{return}
+                                        DispatchQueue.main.async{state.swapSlots(source,slot)}
+                                    }
+                                    return true
+                                }
                         }
                     }
                 }
             }
-            HStack(spacing:12){
-                Button{state.connectSavedLayout()}label:{Label("Conectar mosaico",systemImage:"play.rectangle")}
-                Button{state.stopAll()}label:{Label("Desconectar",systemImage:"stop.circle")}
-                Spacer()
-                Button{state.snapshot()}label:{Image(systemName:"camera")}.help("Salvar imagem PNG").disabled(!state.canSnapshot)
-                Button{state.record()}label:{Label(state.current?.recording?.running == true ? "Finalizar":"Gravar",systemImage:"record.circle")}.disabled(state.current==nil)
-                Button{state.reconnect()}label:{Image(systemName:"arrow.clockwise")}.help("Reconectar painel").disabled(state.current==nil)
-            }.buttonStyle(.bordered).controlSize(.small)
         }.padding(22)
     }
     var backupView:some View{
@@ -163,51 +187,85 @@ struct CameraEditor:View{
     @ViewState private var manualURI=""
     @ViewState private var serviceMessage:String?
     @ViewState private var manualServiceCount=1
+    @ViewState private var provider="standard"
+    @ViewState private var tab="Conexão"
     var body:some View{
-        VStack(alignment:.leading,spacing:18){
-            HStack{Image(systemName:"video.badge.plus").foregroundStyle(accent);Text("Equipamento").font(.title2.bold());Spacer();if busy{ProgressView().controlSize(.small)}}
-            ScrollView{VStack(alignment:.leading,spacing:16){
+        VStack(alignment:.leading,spacing:16){
+            HStack{Image(systemName:"video.badge.plus").foregroundStyle(accent);Text("Adicionar ou editar equipamento").font(.title2.bold());Spacer();if busy{ProgressView().controlSize(.small)}}
+            HStack{Text("Serviço").frame(width:100,alignment:.leading);Picker("Serviço",selection:$provider){Text("Padrão (ONVIF / RTSP)").tag("standard");Text("Intelbras (porta de serviço)").tag("intelbras")}.labelsHidden().frame(maxWidth:340)}
+            Picker("Etapa",selection:$tab){Text("Conexão").tag("Conexão");Text("Canais").tag("Canais");Text("Avançado").tag("Avançado")}.pickerStyle(.segmented)
+            ScrollView{VStack(alignment:.leading,spacing:14){
+                if tab=="Conexão"{connectionTab}
+                else if tab=="Canais"{channelsTab}
+                else{advancedTab}
+                if let error{Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled)}
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,4)}.frame(height:420)
+            HStack{Button("Cancelar"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Salvar equipamento"){
+                do{camera.serviceProvider=provider;if provider=="intelbras" && camera.service==nil{camera.service=ServiceSettings()};try state.upsert(camera,password:password);dismiss()}catch{self.error=error.localizedDescription}
+            }.buttonStyle(PrimaryButtonStyle()).disabled(busy).keyboardShortcut(.defaultAction)}
+        }.padding(26).frame(width:700).disabled(busy).onAppear{
+            provider=camera.serviceProvider ?? (camera.service == nil ? "standard":"intelbras")
+            manualServiceCount=max(1,camera.channels.filter{$0.serviceIndex != nil}.count)
+            do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}
+        }.onChange(of:provider){if provider=="intelbras" && camera.service==nil{camera.service=ServiceSettings()};error=nil;serviceMessage=nil}
+    }
+    var connectionTab:some View{
+        VStack(alignment:.leading,spacing:12){
+            Text("Dados de acesso").font(.headline)
+            Text(provider=="intelbras" ? "Cadastre o gravador pelo endereço e pela porta de serviço.":"Cadastre por endereço para consultar canais ONVIF ou adicionar RTSP.").font(.callout).foregroundStyle(.secondary)
             Form{
-                TextField("Nome",text:$camera.name)
-                TextField("Endereço IP ou hostname",text:$camera.host)
-                HStack{TextField("Porta ONVIF",value:$camera.httpPort,formatter:NumberFormatter());Toggle("HTTPS",isOn:$camera.tls);TextField("Porta RTSP",value:$camera.rtspPort,formatter:NumberFormatter())}
+                TextField("Nome do dispositivo",text:$camera.name)
+                TextField("IP principal ou domínio DDNS",text:$camera.host)
+                if provider=="intelbras"{
+                    TextField("Porta de serviço",value:Binding(get:{camera.service?.port ?? 37777},set:{if camera.service==nil{camera.service=ServiceSettings()};camera.service?.port=$0}),formatter:NumberFormatter())
+                }else{
+                    HStack{TextField("Porta ONVIF",value:$camera.httpPort,formatter:NumberFormatter());Toggle("HTTPS",isOn:$camera.tls);TextField("Porta RTSP",value:$camera.rtspPort,formatter:NumberFormatter())}
+                }
                 TextField("Usuário",text:$camera.username)
-                SecureField("Senha do equipamento",text:$password)
+                SecureField("Senha",text:$password)
             }.textFieldStyle(.roundedBorder)
-            GroupBox("Porta de serviço • experimental"){
-                VStack(alignment:.leading,spacing:8){
-                    Toggle("Cadastrar conexão DVRIP legado",isOn:Binding(get:{camera.service != nil},set:{camera.service = $0 ? ServiceSettings():nil;if !$0{camera.channels.removeAll{$0.serviceIndex != nil}};serviceMessage=nil}))
-                    if camera.service != nil {
-                        HStack{
-                            TextField("Porta de serviço",value:Binding(get:{camera.service?.port ?? 37777},set:{camera.service?.port=$0}),formatter:NumberFormatter()).textFieldStyle(.roundedBorder).frame(width:220)
-                            Button("Testar acesso e consultar canais"){queryService()}.disabled(busy || camera.host.isEmpty)
-                        }
-                        Toggle("Usar substream (menor consumo de rede)",isOn:Binding(get:{camera.service?.substream ?? true},set:{camera.service?.substream=$0}))
-                        Text("Informe a porta de serviço, inclusive se for 12000. Consulte os canais ou cadastre a quantidade manualmente, salve e abra um canal na lista lateral. Vídeo legado experimental; histórico pela porta de serviço ainda não disponível.").font(.caption).foregroundStyle(.secondary)
-                        if let serviceMessage{Text(serviceMessage).font(.caption).foregroundStyle(.orange)}
-                        HStack{
-                            TextField("Quantidade de canais",value:$manualServiceCount,formatter:NumberFormatter()).textFieldStyle(.roundedBorder).frame(width:220)
-                            Button("Criar canais manualmente"){
-                                do{try camera.applyManualServiceChannels(count:manualServiceCount);error=nil;serviceMessage="Canais cadastrados manualmente. Salve o equipamento e abra um canal na lista lateral para testar o vídeo."}catch{self.error=error.localizedDescription}
-                            }
-                        }
-                        Text("Se a consulta automática falhar, informe a quantidade real de canais do gravador. O cadastro manual não verifica se há imagem em cada entrada.").font(.caption).foregroundStyle(.secondary)
-                        if let names=camera.service?.channelNames,!names.isEmpty{ScrollView{VStack(alignment:.leading){ForEach(Array(names.enumerated()),id:\.offset){index,name in Text("\(index+1) · \(name)")}}.frame(maxWidth:.infinity,alignment:.leading)}.font(.caption).frame(height:65)}
-                    }
-                }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+            if provider=="intelbras"{
+                Text("Compatibilidade experimental por endereço IP ou DDNS. Não usa a conta Intelbras.").font(.caption).foregroundStyle(.secondary)
+                Button{queryService()}label:{Label("Testar acesso e buscar canais",systemImage:"arrow.triangle.2.circlepath")}.disabled(busy || camera.host.isEmpty)
+            }else{
+                Button{query()}label:{Label("Buscar canais ONVIF",systemImage:"arrow.triangle.2.circlepath")}.disabled(busy || camera.host.isEmpty)
             }
-            HStack{Button{query()}label:{Label("Buscar canais ONVIF",systemImage:"arrow.triangle.2.circlepath")}.disabled(busy || camera.host.isEmpty);Text("ONVIF deve estar habilitado no equipamento.").font(.caption).foregroundStyle(.secondary)}
+            if let serviceMessage{Text(serviceMessage).font(.callout).foregroundStyle(.orange)}
+        }
+    }
+    var channelsTab:some View{
+        VStack(alignment:.leading,spacing:12){
+            HStack{Text("Canais cadastrados").font(.headline);Spacer();Text("\(camera.channels.count)").foregroundStyle(.secondary)}
+            if camera.channels.isEmpty{Text("Nenhum canal cadastrado. Busque na aba Conexão ou adicione abaixo.").foregroundStyle(.secondary).font(.callout)}
+            ForEach(camera.channels){channel in HStack{Image(systemName:"video").foregroundStyle(accent);VStack(alignment:.leading){Text(channel.name);Text(channel.serviceIndex.map{"Porta de serviço • canal \($0+1)"} ?? channel.uri).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary).lineLimit(1)};Spacer();Button{camera.channels.removeAll{$0.id==channel.id}}label:{Image(systemName:"minus.circle")}.buttonStyle(.plain)}}
             Divider()
-            Text("Canais de vídeo").font(.headline)
-            ScrollView{VStack(spacing:6){ForEach(camera.channels){channel in HStack{Image(systemName:"video").foregroundStyle(accent);VStack(alignment:.leading){Text(channel.name);Text(channel.serviceIndex.map{"Serviço • canal \($0+1) • experimental"} ?? channel.uri).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary).lineLimit(1)};Spacer();Button{camera.channels.removeAll{$0.id==channel.id}}label:{Image(systemName:"minus.circle")}.buttonStyle(.plain)}}}}.frame(height:140)
-            GroupBox("Adicionar endereço RTSP manual"){
-                VStack{HStack{TextField("Nome do canal",text:$channelName).frame(width:140);TextField("rtsp://endereco:554/caminho",text:$manualURI)};HStack{Menu("Preencher caminho comum"){Button("Canal principal /cam/realmonitor"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=0"};Button("Substream /cam/realmonitor"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=1"}};Spacer();Button("Adicionar canal"){addManual()}.disabled(manualURI.isEmpty)}}.padding(5)
+            if provider=="intelbras"{
+                Text("Adicionar canais manualmente").font(.headline)
+                Text("Se a busca falhar, informe a quantidade real de canais do gravador.").font(.caption).foregroundStyle(.secondary)
+                HStack{TextField("Quantidade",value:$manualServiceCount,formatter:NumberFormatter()).textFieldStyle(.roundedBorder).frame(width:140);Button("Criar canais"){
+                    do{if camera.service==nil{camera.service=ServiceSettings()};try camera.applyManualServiceChannels(count:manualServiceCount);error=nil;serviceMessage="Canais cadastrados. Salve e abra um canal no mosaico para testar."}catch{self.error=error.localizedDescription}
+                }}
+            }else{
+                Text("Adicionar endereço RTSP").font(.headline)
+                HStack{TextField("Nome",text:$channelName).frame(width:140);TextField("rtsp://endereco:554/caminho",text:$manualURI)}.textFieldStyle(.roundedBorder)
+                HStack{Menu("Preencher caminho comum"){Button("Canal principal"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=0"};Button("Substream"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=1"}};Spacer();Button("Adicionar canal"){addManual()}.disabled(manualURI.isEmpty)}
             }
-            if let error{Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled)}
-            Text("As senhas ficam no Chaves do macOS. RTSP e ONVIF por HTTP podem trafegar sem criptografia: use uma rede confiável ou VPN.").font(.caption).foregroundStyle(.secondary)
-            }}.frame(maxHeight:680)
-            HStack{Button("Cancelar"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Salvar equipamento"){do{try state.upsert(camera,password:password);dismiss()}catch{self.error=error.localizedDescription}}.buttonStyle(PrimaryButtonStyle()).disabled(busy).keyboardShortcut(.defaultAction)}
-        }.padding(26).frame(width:700).frame(maxHeight:900).disabled(busy).onAppear{manualServiceCount=max(1,camera.channels.filter{$0.serviceIndex != nil}.count);do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}}
+            if let serviceMessage{Text(serviceMessage).font(.callout).foregroundStyle(.orange)}
+        }
+    }
+    var advancedTab:some View{
+        VStack(alignment:.leading,spacing:14){
+            Text("Opções avançadas").font(.headline)
+            if provider=="intelbras"{
+                Toggle("Usar substream (menor consumo de rede)",isOn:Binding(get:{camera.service?.substream ?? true},set:{if camera.service==nil{camera.service=ServiceSettings()};camera.service?.substream=$0}))
+                Text("IP alternativo e identificação em nuvem não estão disponíveis nesta versão. Para DDNS, use o campo IP principal ou domínio na aba Conexão.").font(.callout).foregroundStyle(.secondary)
+                HStack{TextField("IP alternativo — indisponível",text:.constant(""));TextField("Identificação em nuvem — indisponível",text:.constant(""))}.textFieldStyle(.roundedBorder).disabled(true)
+                Divider()
+                Text("ONVIF e RTSP adicionais").font(.headline)
+            }
+            HStack{TextField("Porta ONVIF",value:$camera.httpPort,formatter:NumberFormatter());Toggle("HTTPS",isOn:$camera.tls);TextField("Porta RTSP",value:$camera.rtspPort,formatter:NumberFormatter())}.textFieldStyle(.roundedBorder)
+            Text("As senhas ficam no Chaves do macOS. Conexões sem criptografia devem usar uma rede confiável ou VPN.").font(.caption).foregroundStyle(.secondary)
+        }
     }
     func addManual(){var updated=camera;updated.channels.append(Channel(name:channelName,uri:manualURI));do{try updated.validate();camera=updated;manualURI="";channelName="Canal \(camera.channels.count+1)";error=nil}catch{self.error=error.localizedDescription}}
     func queryService(){
@@ -238,6 +296,41 @@ struct CameraEditor:View{
     }catch{self.error=error.localizedDescription};busy=false}}
 }
 
+struct UnlockView:View{
+    @EnvironmentObject var state:AppState
+    @ViewState private var password=""
+    @ViewState private var error:String?
+    var body:some View{
+        VStack(spacing:18){Image(systemName:"lock.shield").font(.system(size:50)).foregroundStyle(accent);Text("Vigia ARM bloqueado").font(.title.bold());Text("Informe sua senha para desbloquear.").foregroundStyle(.secondary)
+            SecureField("Senha",text:$password).textFieldStyle(.roundedBorder).frame(width:280).onSubmit{unlock()}
+            if let message=error ?? state.lockProblem{Text(message).foregroundStyle(.orange).frame(maxWidth:400)}
+            Button("Desbloquear"){unlock()}.buttonStyle(PrimaryButtonStyle()).disabled(password.isEmpty)
+        }.frame(maxWidth:.infinity,maxHeight:.infinity).frame(minWidth:520,minHeight:400).background(base).preferredColorScheme(.dark)
+    }
+    func unlock(){do{try state.unlock(password);password="";error=nil}catch{password="";self.error=error.localizedDescription}}
+}
+struct LockSettingsView:View{
+    @EnvironmentObject var state:AppState
+    @ViewState private var current=""
+    @ViewState private var password=""
+    @ViewState private var confirmation=""
+    @ViewState private var feedback:String?
+    var body:some View{
+        VStack(alignment:.leading,spacing:18){Text("Configurações").font(.system(size:25,weight:.semibold));Label("Senha de desbloqueio",systemImage:"lock.shield").font(.headline)
+            Text(state.hasLockPassword ? "A senha será solicitada ao iniciar o Vigia e ao desbloquear o aplicativo.":"Cadastre uma senha para proteger o acesso à interface do Vigia neste Mac.").foregroundStyle(.secondary)
+            if state.hasLockPassword{SecureField("Senha atual",text:$current)}
+            SecureField(state.hasLockPassword ? "Nova senha (mínimo 8 caracteres)":"Senha (mínimo 8 caracteres)",text:$password)
+            SecureField("Repetir nova senha",text:$confirmation)
+            HStack{Button(state.hasLockPassword ? "Alterar senha":"Cadastrar senha"){save()}.buttonStyle(PrimaryButtonStyle()).disabled(password.count<8 || password != confirmation || (state.hasLockPassword && current.isEmpty))
+                if state.hasLockPassword{Button("Remover senha"){remove()}.disabled(current.isEmpty)}}
+            if let feedback{Text(feedback).foregroundStyle(.orange)}
+            Text("A senha protege a interface neste Mac. Ela não criptografa a configuração nem os arquivos de vídeo. As câmeras e gravações em andamento continuam quando você bloqueia a tela.").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }.textFieldStyle(.roundedBorder).frame(maxWidth:520,maxHeight:.infinity,alignment:.topLeading).padding(28).frame(maxWidth:.infinity,alignment:.leading)
+    }
+    func save(){do{try state.configureLock(current:current,newPassword:password);current="";password="";confirmation="";feedback="Senha cadastrada. Use Bloquear para proteger a tela."}catch{feedback=error.localizedDescription}}
+    func remove(){do{try state.removeLock(current:current);current="";password="";confirmation="";feedback="Senha de desbloqueio removida."}catch{feedback=error.localizedDescription}}
+}
 struct BackupSheet:View{
     @EnvironmentObject var state:AppState
     @Environment(\.dismiss) var dismiss

@@ -8,6 +8,11 @@ struct MediaInput {
     var replayStart:Date? = nil
     var localFile:Bool = false
     var service:ServiceMediaSource?
+    var recordingSource:MediaInput{
+        var value=self
+        if value.service != nil{value.service?.substream=false}
+        return value
+    }
     func arguments(realtime:Bool=false)->[String] {
         if service != nil{return ["-f","dhav","-probesize","1048576","-analyzeduration","1000000","-i","pipe:0"]}
         if localFile { return (realtime ? ["-re"]:[])+["-i",uri] }
@@ -26,10 +31,23 @@ enum MediaBackend {
         return FileManager.default.isExecutableFile(atPath:bundled.path) ? bundled:nil
     }
     static func process(_ args:[String]) throws -> Process {
-        guard let executable else{throw AppError.message("O mecanismo de vídeo não está instalado neste app. Reconstrua o pacote com FFmpeg ARM64.")}
+        guard let executable else{throw AppError.message("O mecanismo de vídeo não está instalado neste app. Reconstrua o pacote com um FFmpeg compatível com este Mac.")}
         let p=Process();p.executableURL=executable;p.arguments=["-hide_banner","-loglevel","error"]+args
         return p
     }
+}
+struct PreviewSettings {
+    let width:Int
+    let fps:Int
+    init(quality:String){
+        switch quality{
+        case "Econômico":width=480;fps=4
+        case "Detalhado":width=960;fps=10
+        default:width=640;fps=6
+        }
+    }
+    // Do not enlarge a camera's substream: unnecessary resampling and JPEG work.
+    var filter:String{"fps=\(fps),scale=w=min(iw\\,\(width)):h=-2"}
 }
 // This parser is confined to one serial frame queue.
 final class JPEGFrames: @unchecked Sendable {
@@ -58,7 +76,11 @@ final class JPEGFrames: @unchecked Sendable {
     func start(input source:MediaInput,duration:Double?=nil) throws {
         var args=["-nostdin","-n"]+source.arguments()
         if let duration {args += ["-t",String(duration)]}
-        args += ["-map","0:v:0","-map","0:a?","-c","copy","-avoid_negative_ts","make_zero","-f","matroska",destination.path]
+        args += ["-map","0:v:0","-map","0:a?"]
+        if destination.pathExtension.lowercased()=="mp4"{
+            // Preserve source video quality; convert optional audio to MP4-compatible AAC.
+            args += ["-c:v","copy","-c:a","aac","-b:a","128k","-avoid_negative_ts","make_zero","-movflags","+faststart","-f","mp4",destination.path]
+        }else{args += ["-c","copy","-avoid_negative_ts","make_zero","-f","matroska",destination.path]}
         // stdin is reserved for FFmpeg's graceful q command; do not disable it.
         if source.service==nil{args.removeAll{$0=="-nostdin"}}
         let p=try MediaBackend.process(args)
@@ -107,11 +129,10 @@ final class JPEGFrames: @unchecked Sendable {
         stopVideo()
         let token=UUID();generation=token
         serviceError=nil
-        let width=quality=="Econômico" ? 640 : (quality=="Detalhado" ? 1280:960)
-        let fps=quality=="Econômico" ? 6 : (quality=="Detalhado" ? 15:10)
+        let preview=PreviewSettings(quality:quality)
         var args=["-nostdin"]
         if hardware && source.service==nil{args += ["-hwaccel","videotoolbox"]}
-        args += source.arguments(realtime:true)+["-map","0:v:0","-an","-vf","fps=\(fps),scale=\(width):-2","-threads","2","-c:v","mjpeg","-q:v","5","-f","image2pipe","pipe:1"]
+        args += source.arguments(realtime:true)+["-map","0:v:0","-an","-vf",preview.filter,"-threads","2","-c:v","mjpeg","-q:v","5","-f","image2pipe","pipe:1"]
         let p=try MediaBackend.process(args),pipe=Pipe(),frames=JPEGFrames()
         let feed=try source.service.map{try ServiceMediaFeed(source:$0)}
         if let feed{p.standardInput=feed.pipe}
@@ -155,7 +176,7 @@ final class JPEGFrames: @unchecked Sendable {
     }
     func stop() {stopVideo();recording?.stop();status="Desconectado"}
     func record(to url:URL) throws {
-        let job=RecordingJob(destination:url);try job.start(input:source);recording=job
+        let job=RecordingJob(destination:url);try job.start(input:source.recordingSource);recording=job
     }
     func snapshot(to url:URL) throws {
         guard let image,let tiff=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let png=bitmap.representation(using:.png,properties:[:]) else{throw AppError.message("Ainda não há imagem neste painel.")}

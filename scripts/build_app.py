@@ -9,6 +9,7 @@ def main():
     parser.add_argument('--backend',type=Path,default=Path('build-media'))
     parser.add_argument('--out',type=Path,default=Path('build-app'))
     parser.add_argument('--dev-data',type=Path)
+    parser.add_argument('--arch',choices=['arm64','x86_64'],default='arm64')
     args=parser.parse_args();root=Path(__file__).resolve().parents[1]
     version=(root/'VERSION').read_text().strip()
     out=args.out.resolve();backend=args.backend.resolve()
@@ -16,10 +17,10 @@ def main():
         if not (backend/name).is_file():raise SystemExit('Missing media input: '+name)
     for name in ['ffmpeg','ffprobe']:
         arches=subprocess.check_output(['/usr/bin/lipo','-archs',str(backend/name)],text=True)
-        if arches.strip()!='arm64':raise SystemExit('Expected ARM64 backend')
+        if args.arch not in arches.split():raise SystemExit('Media backend does not support '+args.arch)
     app=out/'VigiaARM.app';contents=app/'Contents'
     for path in ['MacOS','Helpers','Resources/Licenses']:(contents/path).mkdir(parents=True,exist_ok=True)
-    run(['xcrun','swiftc','-swift-version','5','-module-cache-path','/tmp/vigia-swift-cache','-parse-as-library','-O','-target','arm64-apple-macosx14.0',*sorted((root/'Sources').glob('*.swift')),'-o',contents/'MacOS/VigiaARM','-framework','SwiftUI','-framework','AppKit','-framework','AVFoundation','-framework','Security','-framework','CryptoKit'])
+    run(['xcrun','swiftc','-swift-version','5','-module-cache-path','/tmp/vigia-swift-cache','-parse-as-library','-O','-target',f'{args.arch}-apple-macosx14.0',*sorted((root/'Sources').glob('*.swift')),'-o',contents/'MacOS/VigiaARM','-framework','SwiftUI','-framework','AppKit','-framework','AVFoundation','-framework','Security','-framework','CryptoKit'])
     for name in ['ffmpeg','ffprobe']:shutil.copy2(backend/name,contents/'Helpers'/name)
     for name in ['COPYING.LGPLv2.1','BUILD.json']:shutil.copy2(backend/name,contents/'Resources/Licenses'/name)
     for name in ['LICENSE','THIRD_PARTY_NOTICES.md','README.md']:
@@ -38,7 +39,7 @@ def main():
     if args.dev_data:info['VigiaDataDirectory']=str(args.dev_data.resolve())
     info['CFBundleVersion']=version.split('-beta.')[-1] if '-beta.' in version else '1'
     info['CFBundleShortVersionString']=version.split('-')[0]
-    info['VigiaVersion']=version
+    info['VigiaVersion']=version.split('-')[0] + (' Beta' if '-beta' in version else '')
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     # Ad-hoc signature for integrity of the local bundle; not Developer ID/notarization.
     for name in ['ffmpeg','ffprobe']:run(['/usr/bin/codesign','--force','--sign','-',contents/'Helpers'/name])

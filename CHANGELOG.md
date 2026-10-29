@@ -1,5 +1,9 @@
 # Histórico
 
+## 1.0.0-beta.4 — 2026-10-29
+
+Pacotes separados para Apple Silicon e Intel; versão Intel experimental e ainda sem validação em hardware real. Favoritos com menu contextual, layouts personalizados, bloqueio por senha, ajustes na interface e gravação MP4 com cópia do vídeo. Histórico pela porta de serviço permanece indisponível.
+
 ## 1.0.0-beta.3 — 2026-10-29
 
 Consulta de canais deixa de impedir o cadastro quando o login funciona: se disponível, utiliza a quantidade de entradas informada na resposta de login legado, com nomes genéricos. Nova opção **Criar canais manualmente**, com quantidade definida pelo usuário, mantendo os nomes e identificadores existentes. Falha de consulta não provoca nova autenticação e a criação manual não afirma disponibilidade de vídeo. 69 verificações locais passaram, além da inspeção e decodificação de dois MKVs.

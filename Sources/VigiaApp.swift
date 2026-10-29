@@ -25,10 +25,10 @@ import AppKit
     @StateObject private var state=AppState()
     var body:some Scene{
         WindowGroup("Vigia ARM"){
-            RootView().environmentObject(state).onAppear{AppDelegate.state=state}
+            Group{if state.locked{UnlockView().environmentObject(state)}else{RootView().environmentObject(state)}}.onAppear{AppDelegate.state=state}
         }.defaultSize(width:1280,height:820).commands{
-            CommandGroup(replacing:.newItem){Button("Novo equipamento…"){NotificationCenter.default.post(name:Notification.Name("VigiaNewCamera"),object:nil)}.keyboardShortcut("n");Button("Importar configuração…"){NotificationCenter.default.post(name:Notification.Name("VigiaImport"),object:nil)}.keyboardShortcut("i",modifiers:[.command,.shift])}
-            CommandGroup(after:.saveItem){Button("Exportar configuração…"){state.exportConfiguration()}.keyboardShortcut("e",modifiers:[.command,.shift]);Button("Abrir vídeo local…"){state.openLocalRecording()}.keyboardShortcut("o")}
+            CommandGroup(replacing:.newItem){Button("Novo equipamento…"){NotificationCenter.default.post(name:Notification.Name("VigiaNewCamera"),object:nil)}.keyboardShortcut("n").disabled(state.locked);Button("Importar configuração…"){NotificationCenter.default.post(name:Notification.Name("VigiaImport"),object:nil)}.keyboardShortcut("i",modifiers:[.command,.shift]).disabled(state.locked)}
+            CommandGroup(after:.saveItem){Button("Exportar configuração…"){state.exportConfiguration()}.keyboardShortcut("e",modifiers:[.command,.shift]).disabled(state.locked);Button("Abrir vídeo local…"){state.openLocalRecording()}.keyboardShortcut("o").disabled(state.locked)}
         }
     }
 }

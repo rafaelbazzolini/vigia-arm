@@ -1,6 +1,6 @@
 # Validação da primeira versão
 
-Data: 29/10/2026. Processo e backend compilados para ARM64, sem Rosetta e sem componentes do SIM Play. Não há afirmação de paridade completa com o SIM Play ou certificação ONVIF.
+Data: 29/10/2026. Os resultados abaixo referem-se ao ARM; o pacote Intel ainda não foi validado em hardware real. Processo e backend compilados para ARM64, sem Rosetta e sem componentes do SIM Play. Não há afirmação de paridade completa com o SIM Play ou certificação ONVIF.
 
 ## Resultado desta execução
 
