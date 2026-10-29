@@ -1,0 +1,20 @@
+name: Native ARM checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  swift:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile independent app
+        run: |
+          swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macosx14.0 Sources/*.swift -o /tmp/VigiaARM -framework SwiftUI -framework AppKit -framework AVFoundation -framework Security -framework CryptoKit
+      - name: Compile core tests
+        run: |
+          swiftc -swift-version 5 -parse-as-library -target arm64-apple-macosx14.0 Sources/Models.swift Sources/ONVIF.swift Sources/Media.swift Sources/AppState.swift Tests/CoreTests.swift -o /tmp/vigia-tests -framework SwiftUI -framework AppKit -framework AVFoundation -framework Security -framework CryptoKit
+      - run: /tmp/vigia-tests
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/*.py Tests/*.py

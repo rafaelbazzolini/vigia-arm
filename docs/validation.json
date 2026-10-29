@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-29",
+  "version": "1.0.0-beta.1",
+  "architecture": "arm64",
+  "ownSwiftCode": true,
+  "simPlayComponentsIncluded": false,
+  "automatedChecksPassed": 30,
+  "localFixtureIntegration": true,
+  "uiImportPreviewAndReplace": true,
+  "uiTwoSimultaneousRTSPPanels": true,
+  "uiRecordingFinalizedAndDecoded": true,
+  "uiEncryptedBackupSaved": true,
+  "uiONVIFHistoryPlayback": true,
+  "replayClockRangeObserved": true,
+  "adHocSignatureVerified": true,
+  "developerProfileIncluded": false,
+  "notarized": false,
+  "realHardwareValidated": false,
+  "audioAndPhysicalPTZValidated": false
+}

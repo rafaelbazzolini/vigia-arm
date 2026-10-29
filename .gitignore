@@ -1,0 +1,12 @@
+build*/
+local-profile/
+**/__pycache__/
+*.pyc
+*.log
+*.vigiabackup
+*.mkv
+*.mp4
+*.m4v
+*.h264
+*.264
+.DS_Store
