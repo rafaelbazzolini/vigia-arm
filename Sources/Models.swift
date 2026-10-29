@@ -70,6 +70,11 @@ struct Camera: Codable, Identifiable, Equatable {
         }
         try updated.validate();self=updated
     }
+    mutating func applyManualServiceChannels(count:Int)throws{
+        guard (1...255).contains(count) else{throw AppError.message("Informe de 1 a 255 canais, conforme o seu gravador.")}
+        let names=(0..<count).map{index in channels.first(where:{$0.serviceIndex==index})?.name ?? "Canal \(index+1)"}
+        try applyServiceInventory(names)
+    }
     func authenticatedURI(_ uri: String, password: String) throws -> String {
         guard var u = URLComponents(string: uri), ["rtsp","rtsps"].contains(u.scheme ?? ""),
               u.host?.lowercased() == host.lowercased() else { throw AppError.message("Endereço de vídeo inválido para este equipamento.") }

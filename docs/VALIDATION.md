@@ -4,6 +4,10 @@ Data: 29/10/2026. Processo e backend compilados para ARM64, sem Rosetta e sem co
 
 ## Resultado desta execução
 
+### Atualização beta.3 — consulta opcional de canais
+
+Passaram **69 verificações Swift**, mais inspeção e decodificação integral de dois MKVs sintéticos. Sete verificações novas cobrem a quantidade informada no login, recuperação após fechamento da conexão de consulta, RPC não suportado, ausência de nova autenticação, recusa de credenciais mesmo com quantidade no cabeçalho e cadastro manual com preservação de nomes/IDs e validação dos limites. O relato do usuário confirma que o login foi aceito no seu equipamento, mas ainda não houve confirmação de vídeo nem observação direta do tráfego real; a causa específica da falha da consulta permanece desconhecida.
+
 ### Atualização beta.2 — porta de serviço
 
 Passaram **62 verificações Swift**, mais inspeção de codec/duração e decodificação integral de dois MKVs no script Python (gravação por duração e finalização manual). Incluem conexão TCP local real, falha de autenticação sem retry, timeout, RPC fragmentado, mensagens inválidas, compatibilidade de backups, associação de socket de mídia, keep-alive, prévia nativa, PNG e gravação de serviço independente do painel. O backend desta versão inclui o demuxer DHAV.

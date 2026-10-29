@@ -1,5 +1,9 @@
 # Histórico
 
+## 1.0.0-beta.3 — 2026-10-29
+
+Consulta de canais deixa de impedir o cadastro quando o login funciona: se disponível, utiliza a quantidade de entradas informada na resposta de login legado, com nomes genéricos. Nova opção **Criar canais manualmente**, com quantidade definida pelo usuário, mantendo os nomes e identificadores existentes. Falha de consulta não provoca nova autenticação e a criação manual não afirma disponibilidade de vídeo. 69 verificações locais passaram, além da inspeção e decodificação de dois MKVs.
+
 ## 1.0.0-beta.2 — 2026-10-29
 
 Cadastro de porta de serviço separado de ONVIF/RTSP, cliente de autenticação DVRIP legado, consulta de canais e transporte experimental de vídeo em duas conexões TCP, com demux DHAV no FFmpeg ARM64. Prévia, PNG e gravação MKV validados com vídeo sintético local. Porta e canais preservados em backups, mantendo os identificadores do mosaico nas consultas seguintes.

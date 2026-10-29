@@ -50,6 +50,27 @@ extension CoreTests {
         let unsupported = try JSONSerialization.data(withJSONObject:["id":1,"session":42,"result":false,"error":["code":268632079]])
         let partial = try ServiceClient(transport:ScriptedService(bootstrap()+rpcFrame(unsupported))).inspect(username:"operator",password:"fixture-password")
         try require(partial.channelNames == nil && partial.message.contains("Autenticação aceita"),"Unsupported channel query is reported separately from successful login")
+        var legacyLogin=bootstrap()
+        let loginOffset=32+Int(ServiceWire.word(legacyLogin,4))
+        legacyLogin[loginOffset+10]=4
+        let failedQuery=ScriptedService(legacyLogin)
+        let counted=try ServiceClient(transport:failedQuery).inspect(username:"operator",password:"fixture-password")
+        try require(counted.channelNames==["Canal 1","Canal 2","Canal 3","Canal 4"] && counted.usedLoginChannelCount,"Login channel count recovers inventory when RPC connection closes")
+        try require(failedQuery.closed && failedQuery.writes.filter{$0.prefix(2)==Data([0xa0,5])}.count==1,"Inventory fallback closes socket and never repeats authentication")
+        let countedUnsupported=try ServiceClient(transport:ScriptedService(legacyLogin+rpcFrame(unsupported))).inspect(username:"operator",password:"fixture-password")
+        try require(countedUnsupported.channelNames?.count==4 && countedUnsupported.message.contains("genéricos"),"Unsupported RPC uses reported count with clearly generic names")
+        var refusedLogin=legacyLogin;refusedLogin[loginOffset+8]=1;refusedLogin[loginOffset+9]=0
+        try expectFailure("Reported channel count never overrides rejected authentication"){_=try ServiceClient(transport:ScriptedService(refusedLogin)).inspect(username:"operator",password:"bad-fixture")}
+        var manual=Camera(name:"Manual service fixture",host:"127.0.0.1")
+        manual.service=ServiceSettings(port:12000)
+        try manual.applyManualServiceChannels(count:4)
+        let first=manual.channels[0].id
+        manual.channels[0].name="Entrada personalizada"
+        try manual.applyManualServiceChannels(count:8)
+        try require(manual.channels.count==8 && manual.channels[0].id==first && manual.channels[0].name=="Entrada personalizada" && manual.channels[7].serviceIndex==7,"Manual service channel count preserves existing names and mosaic IDs")
+        let previousManual=manual
+        try expectFailure("Invalid manual count rejected"){try manual.applyManualServiceChannels(count:256)}
+        try require(manual==previousManual,"Invalid manual inventory leaves configuration intact")
         var oversized = rpcFrame(Data([0]),total:ServiceWire.limit+1)
         oversized.removeLast()
         try expectFailure("Oversized RPC refused without allocating response body") { _ = try ServiceClient(transport:ScriptedService(bootstrap()+oversized)).inspect(username:"operator",password:"fixture-password") }

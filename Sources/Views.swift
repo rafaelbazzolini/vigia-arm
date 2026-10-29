@@ -162,6 +162,7 @@ struct CameraEditor:View{
     @ViewState private var channelName="Canal 1"
     @ViewState private var manualURI=""
     @ViewState private var serviceMessage:String?
+    @ViewState private var manualServiceCount=1
     var body:some View{
         VStack(alignment:.leading,spacing:18){
             HStack{Image(systemName:"video.badge.plus").foregroundStyle(accent);Text("Equipamento").font(.title2.bold());Spacer();if busy{ProgressView().controlSize(.small)}}
@@ -182,8 +183,15 @@ struct CameraEditor:View{
                             Button("Testar acesso e consultar canais"){queryService()}.disabled(busy || camera.host.isEmpty)
                         }
                         Toggle("Usar substream (menor consumo de rede)",isOn:Binding(get:{camera.service?.substream ?? true},set:{camera.service?.substream=$0}))
-                        Text("Informe a porta de serviço, inclusive se for 12000. Após a consulta, salve e abra os canais na lista lateral. Vídeo legado experimental; histórico pela porta de serviço ainda não disponível.").font(.caption).foregroundStyle(.secondary)
+                        Text("Informe a porta de serviço, inclusive se for 12000. Consulte os canais ou cadastre a quantidade manualmente, salve e abra um canal na lista lateral. Vídeo legado experimental; histórico pela porta de serviço ainda não disponível.").font(.caption).foregroundStyle(.secondary)
                         if let serviceMessage{Text(serviceMessage).font(.caption).foregroundStyle(.orange)}
+                        HStack{
+                            TextField("Quantidade de canais",value:$manualServiceCount,formatter:NumberFormatter()).textFieldStyle(.roundedBorder).frame(width:220)
+                            Button("Criar canais manualmente"){
+                                do{try camera.applyManualServiceChannels(count:manualServiceCount);error=nil;serviceMessage="Canais cadastrados manualmente. Salve o equipamento e abra um canal na lista lateral para testar o vídeo."}catch{self.error=error.localizedDescription}
+                            }
+                        }
+                        Text("Se a consulta automática falhar, informe a quantidade real de canais do gravador. O cadastro manual não verifica se há imagem em cada entrada.").font(.caption).foregroundStyle(.secondary)
                         if let names=camera.service?.channelNames,!names.isEmpty{ScrollView{VStack(alignment:.leading){ForEach(Array(names.enumerated()),id:\.offset){index,name in Text("\(index+1) · \(name)")}}.frame(maxWidth:.infinity,alignment:.leading)}.font(.caption).frame(height:65)}
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
@@ -199,7 +207,7 @@ struct CameraEditor:View{
             Text("As senhas ficam no Chaves do macOS. RTSP e ONVIF por HTTP podem trafegar sem criptografia: use uma rede confiável ou VPN.").font(.caption).foregroundStyle(.secondary)
             }}.frame(maxHeight:680)
             HStack{Button("Cancelar"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Salvar equipamento"){do{try state.upsert(camera,password:password);dismiss()}catch{self.error=error.localizedDescription}}.buttonStyle(PrimaryButtonStyle()).disabled(busy).keyboardShortcut(.defaultAction)}
-        }.padding(26).frame(width:700).frame(maxHeight:900).disabled(busy).onAppear{do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}}
+        }.padding(26).frame(width:700).frame(maxHeight:900).disabled(busy).onAppear{manualServiceCount=max(1,camera.channels.filter{$0.serviceIndex != nil}.count);do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}}
     }
     func addManual(){var updated=camera;updated.channels.append(Channel(name:channelName,uri:manualURI));do{try updated.validate();camera=updated;manualURI="";channelName="Canal \(camera.channels.count+1)";error=nil}catch{self.error=error.localizedDescription}}
     func queryService(){
@@ -212,7 +220,10 @@ struct CameraEditor:View{
                 let transport=try ServiceTCP(host:host,port:port)
                 return try ServiceClient(transport:transport).inspect(username:user,password:pass)
             }.value
-            if let names=inventory.channelNames{try camera.applyServiceInventory(names)}
+            if let names=inventory.channelNames{
+                if inventory.usedLoginChannelCount{try camera.applyManualServiceChannels(count:names.count)}else{try camera.applyServiceInventory(names)}
+                manualServiceCount=names.count
+            }
             serviceMessage=inventory.message
         }catch{self.error=error.localizedDescription};busy=false}
     }

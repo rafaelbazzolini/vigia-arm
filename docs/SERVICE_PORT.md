@@ -10,6 +10,8 @@ A versão 1.0.0-beta.2 adiciona um cliente independente do protocolo **DVRIP leg
 4. Se a consulta for aceita, os canais aparecem no cadastro. Salve o equipamento e abra um canal na lista lateral.
 5. O substream fica selecionado por padrão. Desative a opção se o equipamento só disponibilizar o stream principal. A mudança se aplica às próximas conexões.
 
+**Beta.3:** a consulta dos nomes não é mais obrigatória. Quando o login legado informa a quantidade de entradas, o app usa esse número como alternativa e avisa que os nomes são genéricos. Se o número não vier no login, ou se preferir cadastrar diretamente, preencha **Quantidade de canais** e clique em **Criar canais manualmente**. Informe a quantidade real do gravador; depois salve e teste o vídeo. O cadastro não confirma imagem, conectividade ou permissão de cada entrada, não altera o equipamento e não envia outra tentativa de login. Canais já cadastrados mantêm seus identificadores e nomes no cadastro manual.
+
 Os canais de serviço, suas posições e a porta fazem parte do JSON e do backup completo criptografado. As senhas permanecem no Chaves ou dentro do backup criptografado. Configurações antigas continuam legíveis. Versões anteriores do app não reproduzem canais de serviço.
 
 ## Etapas e limites

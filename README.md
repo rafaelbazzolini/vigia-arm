@@ -28,6 +28,8 @@ Os perfis ONVIF podem representar substreams diferentes do mesmo canal. Os camin
 
 Se você só possui uma **porta de serviço**, ative a seção correspondente no cadastro, informe essa porta e consulte os canais. Salve e abra um canal na lista lateral. A beta.2 foi testada com um servidor sintético local; o acesso ao gravador do usuário permaneceu bloqueado pelo ambiente. Histórico pela porta de serviço ainda não está implementado. Não trate a porta de serviço como RTSP. Leia `docs/SERVICE_PORT.md` antes de testar.
 
+Na beta.3, se o login for aceito mas a consulta falhar, o app aproveita a quantidade de canais informada no login, quando disponível. Também é possível informar a quantidade real de canais e clicar em **Criar canais manualmente**. Salve o equipamento e teste um canal na lateral. Nomes genéricos e cadastro manual não significam que o vídeo foi validado.
+
 Na aba **Backups**, exporte JSON sem senhas ou crie um backup completo criptografado. A senha do backup não é salva nem recuperável. A importação mostra os equipamentos antes de aplicar; ela não altera os dispositivos físicos. Não importe arquivos de origem desconhecida.
 
 A configuração fica em `~/Library/Application Support/VigiaARM/configuration.json`; as senhas ficam no Chaves, serviço `io.github.rafaelbazzolini.vigia-arm`. Um build de desenvolvimento pode indicar outra pasta de dados. Gravações e imagens são salvas somente onde você escolher. O programa não envia telemetria nem publica configurações.

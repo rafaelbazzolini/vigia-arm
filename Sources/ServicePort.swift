@@ -172,11 +172,13 @@ enum ServiceWire {
 struct ServiceInventory {
     // nil means login succeeded but channel enumeration was not supported.
     var channelNames: [String]?
+    var usedLoginChannelCount = false
     var message: String {
         if let channelNames {
+            if usedLoginChannelCount{return "Autenticação aceita • \(channelNames.count) canais informados no login. Os nomes não puderam ser consultados; foram usados nomes genéricos. Salve e teste um canal."}
             return "Autenticação aceita • \(channelNames.count) canais identificados. Salve e abra um canal para testar o vídeo legado experimental."
         }
-        return "Autenticação aceita; a consulta de canais não foi reconhecida por esta variante do gravador."
+        return "Autenticação aceita; a consulta automática não forneceu os canais. Informe a quantidade abaixo e clique em Criar canais manualmente."
     }
 }
 
@@ -184,6 +186,7 @@ final class ServiceClient {
     private let transport: ServiceTransport
     private var session: UInt32 = 0
     private var request: UInt32 = 0
+    private var loginChannelCount = 0
     init(transport: ServiceTransport) { self.transport = transport }
 
     // Exactly one authentication attempt per explicit user action. No fallback,
@@ -198,6 +201,9 @@ final class ServiceClient {
         try transport.write(ServiceWire.login(username: username, password: password, realm: challenge.realm, random: challenge.random))
         let loginHeader = try transport.readExactly(32)
         session = try ServiceWire.authenticatedSession(loginHeader)
+        // Legacy login replies carry the number of video inputs in byte 10.
+        // Zero means unknown; never invent a channel count in that case.
+        loginChannelCount = Int(loginHeader[10])
         let loginLength = Int(ServiceWire.word(loginHeader,4))
         guard loginLength <= 8192 else { throw ServiceWire.invalid }
         if loginLength > 0 { _ = try transport.readExactly(loginLength) }
@@ -209,16 +215,23 @@ final class ServiceClient {
         defer { try? transport.write(ServiceWire.rpc("global.logout", params: [:], id: request &+ 1, session: session)) }
         let result: [String: Any]
         do { result = try call("configManager.getConfig", params: ["name": "ChannelTitle"]) }
-        catch { throw AppError.message("Autenticação aceita, mas a consulta de canais falhou ou a conexão foi interrompida.") }
+        catch {
+            if loginChannelCount>0{return loginInventory()}
+            throw AppError.message("Autenticação aceita, mas a consulta automática falhou. Informe a quantidade de canais e use Criar canais manualmente. Depois salve e teste um canal na lista lateral.")
+        }
         guard result["result"] as? Bool == true,
               let params = result["params"] as? [String: Any], let table = params["table"] as? [[String: Any]],
-              !table.isEmpty, table.count <= 255 else { return ServiceInventory(channelNames: nil) }
+              !table.isEmpty, table.count <= 255 else { return loginInventory() }
         let names = try table.enumerated().map { index, row -> String in
             guard let title = row["Name"] as? String, title.count <= 160,
                   !title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw ServiceWire.invalid }
             return title.trimmingCharacters(in: .whitespaces).isEmpty ? "Canal \(index+1)" : title
         }
         return ServiceInventory(channelNames: names)
+    }
+    private func loginInventory()->ServiceInventory {
+        guard loginChannelCount>0 else{return ServiceInventory(channelNames:nil)}
+        return ServiceInventory(channelNames:(1...loginChannelCount).map{"Canal \($0)"},usedLoginChannelCount:true)
     }
     private func call(_ method: String, params: [String: Any]) throws -> [String: Any] {
         request += 1
