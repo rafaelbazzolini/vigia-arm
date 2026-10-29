@@ -13,7 +13,10 @@ if 'VigiaDataDirectory' in info:raise SystemExit('Refusing a development profile
 subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(app)],check=True)
 with tempfile.TemporaryDirectory(prefix='vigia-package-') as directory:
     package=Path(directory)/'VigiaARM-1.0.0-beta.1-macOS-arm64';package.mkdir()
-    shutil.copytree(app,package/'VigiaARM.app',copy_function=shutil.copyfile)
+    shutil.copytree(app,package/'VigiaARM.app',copy_function=shutil.copy2)
+    for executable in ['MacOS/VigiaARM','Helpers/ffmpeg','Helpers/ffprobe']:
+        if not ((package/'VigiaARM.app/Contents'/executable).stat().st_mode & 0o111):
+            raise SystemExit('Executable permission missing: '+executable)
     shutil.copyfile(build/'ffmpeg-8.1.2-vigia-source.tar.gz',package/'ffmpeg-8.1.2-vigia-source.tar.gz')
     for name in ['README.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md']:shutil.copyfile(root/name,package/name)
     shutil.copytree(root/'docs',package/'docs')
