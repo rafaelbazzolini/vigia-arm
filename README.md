@@ -7,6 +7,7 @@ Cliente de vídeo independente para **macOS 14+ e Apple Silicon**, escrito em Sw
 - Cadastro de câmeras e gravadores por endereço, usuário e senha.
 - Descoberta ONVIF na rede local e consulta dos perfis Media1.
 - Cadastro manual de URLs RTSP, com usuário e senha em campos separados.
+- Porta de serviço DVRIP legado experimental: autenticação, consulta dos canais e vídeo ao vivo pelo transporte binário, sem SDK do fabricante. Consulte [configuração, testes e limites](docs/SERVICE_PORT.md).
 - Mosaicos de 1, 4, 9 ou 16 canais, conexão sob demanda e reconexão manual.
 - Modos Econômico, Equilibrado e Detalhado para a prévia; vídeo H.264, HEVC e MPEG-4 conforme a compilação do FFmpeg.
 - Captura de imagem PNG; gravação do stream original em MKV sem reencodificação.
@@ -24,6 +25,8 @@ Cliente de vídeo independente para **macOS 14+ e Apple Silicon**, escrito em Sw
 Abra `VigiaARM.app`. Adicione um equipamento, informe o endereço e as credenciais e clique em **Buscar canais ONVIF**, ou adicione uma URL RTSP manual. Salve, selecione um painel e abra o canal na lista lateral. A descoberta não envia senhas; as conexões usam as credenciais cadastradas.
 
 Os perfis ONVIF podem representar substreams diferentes do mesmo canal. Os caminhos RTSP de exemplo são sugestões e não garantem compatibilidade com um modelo.
+
+Se você só possui uma **porta de serviço**, ative a seção correspondente no cadastro, informe essa porta e consulte os canais. Salve e abra um canal na lista lateral. A beta.2 foi testada com um servidor sintético local; o acesso ao gravador do usuário permaneceu bloqueado pelo ambiente. Histórico pela porta de serviço ainda não está implementado. Não trate a porta de serviço como RTSP. Leia `docs/SERVICE_PORT.md` antes de testar.
 
 Na aba **Backups**, exporte JSON sem senhas ou crie um backup completo criptografado. A senha do backup não é salva nem recuperável. A importação mostra os equipamentos antes de aplicar; ela não altera os dispositivos físicos. Não importe arquivos de origem desconhecida.
 

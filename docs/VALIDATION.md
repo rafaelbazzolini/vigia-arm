@@ -4,6 +4,16 @@ Data: 29/10/2026. Processo e backend compilados para ARM64, sem Rosetta e sem co
 
 ## Resultado desta execução
 
+### Atualização beta.2 — porta de serviço
+
+Passaram **62 verificações Swift**, mais inspeção de codec/duração e decodificação integral de dois MKVs no script Python (gravação por duração e finalização manual). Incluem conexão TCP local real, falha de autenticação sem retry, timeout, RPC fragmentado, mensagens inválidas, compatibilidade de backups, associação de socket de mídia, keep-alive, prévia nativa, PNG e gravação de serviço independente do painel. O backend desta versão inclui o demuxer DHAV.
+
+Com o fixture ONVIF ativo, `python3 scripts/run_checks.py --backend build-media-service --fixture` concluiu **67 verificações Swift**, preservando os cinco testes de integração ONVIF anteriores. As inspeções dos dois MKVs também passaram nesta execução final.
+
+Não houve validação no DVR do usuário: a política do ambiente bloqueou o teste de rede. O transporte de vídeo é experimental e o histórico por serviço não foi implementado. Detalhes e instruções em [SERVICE_PORT.md](SERVICE_PORT.md). A interface foi compilada, sem nova inspeção visual nesta etapa.
+
+### Validação anterior beta.1
+
 **30 verificações passaram**, incluindo a integração local ONVIF. Na interface foram observados: prévia/importação com substituição, dois vídeos RTSP simultâneos, gravação finalizada com estado Arquivo salvo, backup criptografado salvo e reprodução histórica no painel. Os arquivos MKV foram inspecionados com ffprobe e decodificados sem erros. O app e o FFmpeg são ARM64; a assinatura ad hoc do pacote foi verificada.
 
 ## Testes automatizados

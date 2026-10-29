@@ -71,8 +71,13 @@ import UniformTypeIdentifiers
     func connect(_ camera:Camera,_ channel:Channel,slot:Int?=nil) {
         let target=slot ?? selectedSlot
         do {
-            let password=try secrets.read(camera.id),uri=try camera.authenticatedURI(channel.uri,password:password)
-            try open(camera:camera,channel:channel,source:MediaInput(uri:uri),slot:target)
+            let password=try secrets.read(camera.id)
+            let source:MediaInput
+            if let index=channel.serviceIndex,let service=camera.service{
+                try camera.validate()
+                source=MediaInput(uri:"",service:ServiceMediaSource(host:camera.host,port:service.port,username:camera.username,password:password,channel:index,substream:service.substream ?? true))
+            }else{source=MediaInput(uri:try camera.authenticatedURI(channel.uri,password:password))}
+            try open(camera:camera,channel:channel,source:source,slot:target)
             config.slots[target]=LayoutSlot(cameraID:camera.id,channelID:channel.id);try save()
         }catch{report(error)}
     }

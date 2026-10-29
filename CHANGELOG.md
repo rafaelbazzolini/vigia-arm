@@ -1,5 +1,11 @@
 # Histórico
 
+## 1.0.0-beta.2 — 2026-10-29
+
+Cadastro de porta de serviço separado de ONVIF/RTSP, cliente de autenticação DVRIP legado, consulta de canais e transporte experimental de vídeo em duas conexões TCP, com demux DHAV no FFmpeg ARM64. Prévia, PNG e gravação MKV validados com vídeo sintético local. Porta e canais preservados em backups, mantendo os identificadores do mosaico nas consultas seguintes.
+
+Falhas de autenticação não causam retry automático. Sessões e buffers têm limites e encerramento explícito. Histórico por serviço ainda não implementado; vídeo e áudio em gravador real ainda não homologados. Consulte `docs/SERVICE_PORT.md`.
+
 ## 1.0.0-beta.1 — 2026-10-29
 
 Primeira implementação independente para macOS Apple Silicon: interface SwiftUI, ícone próprio, cliente RTSP/ONVIF, mosaico, snapshots, gravação MKV, reprodução local, áudio, PTZ e integração de histórico ONVIF. Configuração JSON, backup criptografado e restauração com prévia/mesclagem.

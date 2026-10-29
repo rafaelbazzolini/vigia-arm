@@ -10,7 +10,7 @@ FLAGS = ['--arch=arm64','--target-os=darwin','--cc=clang','--disable-autodetect'
  '--enable-pthreads','--enable-videotoolbox','--enable-audiotoolbox','--enable-securetransport','--enable-zlib',
  '--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox',
  '--enable-protocol=file,pipe,tcp,udp,rtp,http,https,tls',
- '--enable-demuxer=rtsp,rtp,sdp,mov,matroska,h264,hevc,aac,image2,wav,m4v',
+ '--enable-demuxer=rtsp,rtp,sdp,mov,matroska,h264,hevc,aac,image2,wav,m4v,dhav',
  '--enable-decoder=h264,hevc,mjpeg,mpeg4,aac,pcm_alaw,pcm_mulaw,pcm_s16le,wrapped_avframe,rawvideo',
  '--enable-parser=h264,hevc,aac,mjpeg,mpeg4video', '--enable-muxer=matroska,mp4,mov,h264,m4v,image2pipe,null,wav,s16le',
  '--enable-encoder=mjpeg,pcm_s16le,rawvideo,mpeg4,h264_videotoolbox,aac', '--enable-filter=scale,fps,format,testsrc,testsrc2,sine,anull,null,aresample,hwdownload',

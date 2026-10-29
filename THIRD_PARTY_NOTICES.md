@@ -8,4 +8,6 @@ FFmpeg é marca de seus titulares. O projeto utiliza frameworks fornecidos pelo 
 
 Referências de implementação: especificações públicas ONVIF Device/Media/PTZ/Recording/Replay e os protocolos RTSP/RTP. Não se afirma a realização de um processo formal de sala limpa auditado. Implementar um cliente independente não equivale a copiar a implementação do fornecedor.
 
+O cliente experimental de porta de serviço usa referências públicas de interoperabilidade: DahuaConsole (MIT, Copyright (c) 2021 bashis; aviso em `LICENSES/DahuaConsole-MIT.txt`), documentação imou-life e fatos do protocolo descritos no projeto TaniDVR. Nenhum console, SDK ou binário desses projetos é executado pelo app. Veja `docs/SERVICE_PORT.md` para escopo e atribuição. O demuxer DHAV é parte do FFmpeg LGPL incluído nesta compilação.
+
 As permissões de uso do equipamento, da rede e do conteúdo gravado continuam sendo responsabilidade do usuário. A disponibilidade pública de especificações e licenças livres não substitui a análise de outras obrigações aplicáveis, incluindo eventuais patentes de codecs.

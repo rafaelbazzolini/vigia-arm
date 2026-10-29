@@ -27,7 +27,7 @@ struct RootView:View {
     var body:some View {
         HStack(spacing:0){
             VStack(alignment:.leading,spacing:18){
-                HStack(spacing:10){Image(systemName:"eye.circle.fill").font(.system(size:33)).foregroundStyle(accent);VStack(alignment:.leading,spacing:2){Text("VIGIA").font(.system(size:21,weight:.bold,design:.rounded));Text("ARM • 1.0.0").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(.secondary)}}.padding(.top,12)
+                HStack(spacing:10){Image(systemName:"eye.circle.fill").font(.system(size:33)).foregroundStyle(accent);VStack(alignment:.leading,spacing:2){Text("VIGIA").font(.system(size:21,weight:.bold,design:.rounded));Text("ARM • "+(Bundle.main.object(forInfoDictionaryKey:"VigiaVersion") as? String ?? "1.0.0")).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(.secondary)}}.padding(.top,12)
                 TextField("Buscar equipamento",text:$state.search).textFieldStyle(.roundedBorder)
                 HStack{Text("EQUIPAMENTOS").font(.system(size:10,weight:.bold)).foregroundStyle(.secondary);Spacer();Text("\(state.config.cameras.count)").font(.caption.monospacedDigit()).foregroundStyle(accent)}
                 ScrollView{
@@ -36,6 +36,9 @@ struct RootView:View {
                             DisclosureGroup{
                                 ForEach(camera.channels){channel in
                                     Button{state.connect(camera,channel)}label:{HStack{Image(systemName:"video").foregroundStyle(accent);Text(channel.name).lineLimit(1);Spacer();Image(systemName:"play.fill").font(.system(size:9)).foregroundStyle(.secondary)}.padding(.vertical,6)}.buttonStyle(.plain)
+                                }
+                                if let service=camera.service, !service.channelNames.isEmpty {
+                                    Text("Porta \(service.port) • vídeo experimental").font(.caption2).foregroundStyle(.orange).padding(.vertical,4)
                                 }
                                 if camera.channels.isEmpty{Button("Configurar canais…"){editing=camera}.font(.caption).padding(.vertical,6)}
                             }label:{HStack{Image(systemName:"externaldrive.connected.to.line.below").foregroundStyle(state.selectedCamera==camera.id ? accent:.secondary);VStack(alignment:.leading,spacing:3){Text(camera.name).font(.system(size:12,weight:.semibold));Text("\(camera.channels.count) canais").font(.system(size:10)).foregroundStyle(.secondary)}}.padding(.vertical,5)}
@@ -158,9 +161,11 @@ struct CameraEditor:View{
     @ViewState private var error:String?
     @ViewState private var channelName="Canal 1"
     @ViewState private var manualURI=""
+    @ViewState private var serviceMessage:String?
     var body:some View{
         VStack(alignment:.leading,spacing:18){
             HStack{Image(systemName:"video.badge.plus").foregroundStyle(accent);Text("Equipamento").font(.title2.bold());Spacer();if busy{ProgressView().controlSize(.small)}}
+            ScrollView{VStack(alignment:.leading,spacing:16){
             Form{
                 TextField("Nome",text:$camera.name)
                 TextField("Endereço IP ou hostname",text:$camera.host)
@@ -168,19 +173,49 @@ struct CameraEditor:View{
                 TextField("Usuário",text:$camera.username)
                 SecureField("Senha do equipamento",text:$password)
             }.textFieldStyle(.roundedBorder)
+            GroupBox("Porta de serviço • experimental"){
+                VStack(alignment:.leading,spacing:8){
+                    Toggle("Cadastrar conexão DVRIP legado",isOn:Binding(get:{camera.service != nil},set:{camera.service = $0 ? ServiceSettings():nil;if !$0{camera.channels.removeAll{$0.serviceIndex != nil}};serviceMessage=nil}))
+                    if camera.service != nil {
+                        HStack{
+                            TextField("Porta de serviço",value:Binding(get:{camera.service?.port ?? 37777},set:{camera.service?.port=$0}),formatter:NumberFormatter()).textFieldStyle(.roundedBorder).frame(width:220)
+                            Button("Testar acesso e consultar canais"){queryService()}.disabled(busy || camera.host.isEmpty)
+                        }
+                        Toggle("Usar substream (menor consumo de rede)",isOn:Binding(get:{camera.service?.substream ?? true},set:{camera.service?.substream=$0}))
+                        Text("Informe a porta de serviço, inclusive se for 12000. Após a consulta, salve e abra os canais na lista lateral. Vídeo legado experimental; histórico pela porta de serviço ainda não disponível.").font(.caption).foregroundStyle(.secondary)
+                        if let serviceMessage{Text(serviceMessage).font(.caption).foregroundStyle(.orange)}
+                        if let names=camera.service?.channelNames,!names.isEmpty{ScrollView{VStack(alignment:.leading){ForEach(Array(names.enumerated()),id:\.offset){index,name in Text("\(index+1) · \(name)")}}.frame(maxWidth:.infinity,alignment:.leading)}.font(.caption).frame(height:65)}
+                    }
+                }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+            }
             HStack{Button{query()}label:{Label("Buscar canais ONVIF",systemImage:"arrow.triangle.2.circlepath")}.disabled(busy || camera.host.isEmpty);Text("ONVIF deve estar habilitado no equipamento.").font(.caption).foregroundStyle(.secondary)}
             Divider()
             Text("Canais de vídeo").font(.headline)
-            ScrollView{VStack(spacing:6){ForEach(camera.channels){channel in HStack{Image(systemName:"video").foregroundStyle(accent);VStack(alignment:.leading){Text(channel.name);Text(channel.uri).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary).lineLimit(1)};Spacer();Button{camera.channels.removeAll{$0.id==channel.id}}label:{Image(systemName:"minus.circle")}.buttonStyle(.plain)}}}}.frame(height:140)
+            ScrollView{VStack(spacing:6){ForEach(camera.channels){channel in HStack{Image(systemName:"video").foregroundStyle(accent);VStack(alignment:.leading){Text(channel.name);Text(channel.serviceIndex.map{"Serviço • canal \($0+1) • experimental"} ?? channel.uri).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary).lineLimit(1)};Spacer();Button{camera.channels.removeAll{$0.id==channel.id}}label:{Image(systemName:"minus.circle")}.buttonStyle(.plain)}}}}.frame(height:140)
             GroupBox("Adicionar endereço RTSP manual"){
                 VStack{HStack{TextField("Nome do canal",text:$channelName).frame(width:140);TextField("rtsp://endereco:554/caminho",text:$manualURI)};HStack{Menu("Preencher caminho comum"){Button("Canal principal /cam/realmonitor"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=0"};Button("Substream /cam/realmonitor"){manualURI="rtsp://\(camera.host):\(camera.rtspPort)/cam/realmonitor?channel=\(camera.channels.count+1)&subtype=1"}};Spacer();Button("Adicionar canal"){addManual()}.disabled(manualURI.isEmpty)}}.padding(5)
             }
             if let error{Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled)}
             Text("As senhas ficam no Chaves do macOS. RTSP e ONVIF por HTTP podem trafegar sem criptografia: use uma rede confiável ou VPN.").font(.caption).foregroundStyle(.secondary)
+            }}.frame(maxHeight:680)
             HStack{Button("Cancelar"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Salvar equipamento"){do{try state.upsert(camera,password:password);dismiss()}catch{self.error=error.localizedDescription}}.buttonStyle(PrimaryButtonStyle()).disabled(busy).keyboardShortcut(.defaultAction)}
-        }.padding(26).frame(width:660).onAppear{do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}}
+        }.padding(26).frame(width:700).frame(maxHeight:900).disabled(busy).onAppear{do{password=try state.secrets.read(camera.id)}catch{self.error=error.localizedDescription}}
     }
     func addManual(){var updated=camera;updated.channels.append(Channel(name:channelName,uri:manualURI));do{try updated.validate();camera=updated;manualURI="";channelName="Canal \(camera.channels.count+1)";error=nil}catch{self.error=error.localizedDescription}}
+    func queryService(){
+        guard let settings=camera.service else{return}
+        do{try camera.validate()}catch{self.error=error.localizedDescription;return}
+        busy=true;error=nil;serviceMessage=nil
+        let host=camera.host,user=camera.username,pass=password,port=settings.port
+        Task{do{
+            let inventory=try await Task.detached(priority:.userInitiated){
+                let transport=try ServiceTCP(host:host,port:port)
+                return try ServiceClient(transport:transport).inspect(username:user,password:pass)
+            }.value
+            if let names=inventory.channelNames{try camera.applyServiceInventory(names)}
+            serviceMessage=inventory.message
+        }catch{self.error=error.localizedDescription};busy=false}
+    }
     func query(){busy=true;error=nil;Task{do{
         var updated=try await ONVIFClient(camera:camera,password:password).services()
         let channels=try await ONVIFClient(camera:updated,password:password).profiles()

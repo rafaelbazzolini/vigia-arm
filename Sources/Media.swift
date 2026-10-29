@@ -7,7 +7,9 @@ struct MediaInput {
     var uri:String
     var replayStart:Date? = nil
     var localFile:Bool = false
+    var service:ServiceMediaSource?
     func arguments(realtime:Bool=false)->[String] {
+        if service != nil{return ["-f","dhav","-probesize","1048576","-analyzeduration","1000000","-i","pipe:0"]}
         if localFile { return (realtime ? ["-re"]:[])+["-i",uri] }
         var args=["-rtsp_transport","tcp","-timeout","12000000"]
         if let replayStart {
@@ -50,27 +52,34 @@ final class JPEGFrames: @unchecked Sendable {
     let destination:URL
     private var process:Process?
     private var input:Pipe?
+    private var serviceFeed:ServiceMediaFeed?
+    private var serviceError:String?
     init(destination:URL){self.destination=destination}
     func start(input source:MediaInput,duration:Double?=nil) throws {
         var args=["-nostdin","-n"]+source.arguments()
         if let duration {args += ["-t",String(duration)]}
         args += ["-map","0:v:0","-map","0:a?","-c","copy","-avoid_negative_ts","make_zero","-f","matroska",destination.path]
         // stdin is reserved for FFmpeg's graceful q command; do not disable it.
-        args.removeAll{$0=="-nostdin"}
-        let p=try MediaBackend.process(args);let pipe=Pipe();input=pipe;p.standardInput=pipe
+        if source.service==nil{args.removeAll{$0=="-nostdin"}}
+        let p=try MediaBackend.process(args)
+        let feed=try source.service.map{try ServiceMediaFeed(source:$0)}
+        if let feed{p.standardInput=feed.pipe}else{let pipe=Pipe();input=pipe;p.standardInput=pipe}
         p.standardOutput=FileHandle.nullDevice;p.standardError=FileHandle.nullDevice
         p.terminationHandler={ [weak self] p in DispatchQueue.main.async {
             guard let self else{return};self.running=false
+            self.serviceFeed?.stop();self.serviceFeed=nil
             let count=(try? self.destination.resourceValues(forKeys:[.fileSizeKey]).fileSize) ?? 0
-            self.state=p.terminationStatus==0 && count>0 ? "Arquivo salvo" : "Gravação interrompida ou indisponível (\(p.terminationStatus)). Confira o arquivo."
+            self.state=self.serviceError.map{"Gravação interrompida: "+$0} ?? (p.terminationStatus==0 && count>0 ? "Arquivo salvo" : "Gravação interrompida ou indisponível (\(p.terminationStatus)). Confira o arquivo.")
             self.process=nil;self.input=nil
         }}
-        try p.run();process=p;running=true;state=duration==nil ? "Gravando":"Exportando gravação…"
+        do{try p.run()}catch{feed?.stop();throw error}
+        process=p;serviceFeed=feed;running=true;state=duration==nil ? "Gravando":"Exportando gravação…"
+        feed?.start{[weak self] message in DispatchQueue.main.async{self?.serviceError=message}}
     }
     func stop() {
         guard let process,process.isRunning else{return}
         state="Finalizando arquivo…"
-        try? input?.fileHandleForWriting.write(contentsOf:Data("q\n".utf8))
+        if let serviceFeed{serviceFeed.stop()}else{try? input?.fileHandleForWriting.write(contentsOf:Data("q\n".utf8))}
         DispatchQueue.main.asyncAfter(deadline:.now()+5){[weak self] in
             guard let p=self?.process,p.isRunning else{return};p.interrupt()
         }
@@ -91,16 +100,21 @@ final class JPEGFrames: @unchecked Sendable {
     private var generation=UUID()
     private let frameQueue=DispatchQueue(label:"vigia.frames",qos:.userInitiated)
     private var audio:AudioMonitor?
+    private var serviceFeed:ServiceMediaFeed?
+    private var serviceError:String?
     init(camera:Camera,channel:Channel,source:MediaInput){self.camera=camera;self.channel=channel;self.source=source}
     func start(quality:String,hardware:Bool=true) throws {
         stopVideo()
         let token=UUID();generation=token
+        serviceError=nil
         let width=quality=="Econômico" ? 640 : (quality=="Detalhado" ? 1280:960)
         let fps=quality=="Econômico" ? 6 : (quality=="Detalhado" ? 15:10)
         var args=["-nostdin"]
-        if hardware {args += ["-hwaccel","videotoolbox"]}
+        if hardware && source.service==nil{args += ["-hwaccel","videotoolbox"]}
         args += source.arguments(realtime:true)+["-map","0:v:0","-an","-vf","fps=\(fps),scale=\(width):-2","-threads","2","-c:v","mjpeg","-q:v","5","-f","image2pipe","pipe:1"]
         let p=try MediaBackend.process(args),pipe=Pipe(),frames=JPEGFrames()
+        let feed=try source.service.map{try ServiceMediaFeed(source:$0)}
+        if let feed{p.standardInput=feed.pipe}
         p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
         pipe.fileHandleForReading.readabilityHandler={ [weak self] handle in
             let chunk=handle.availableData
@@ -116,19 +130,26 @@ final class JPEGFrames: @unchecked Sendable {
         p.terminationHandler={ [weak self] process in DispatchQueue.main.async {
             guard let self,self.generation==token else{return}
             self.active=false
-            if hardware && self.image==nil {
+            self.serviceFeed?.stop();self.serviceFeed=nil
+            if let error=self.serviceError{self.status=error;return}
+            if hardware && self.image==nil && self.source.service==nil {
                 do {try self.start(quality:quality,hardware:false)} catch {self.status=error.localizedDescription}
             } else {self.status=self.source.localFile ? "Reprodução concluída":"Conexão encerrada. Confira rede, credenciais ou canal e reconecte."}
         }}
-        try p.run();self.process=p;self.pipe=pipe;status=source.replayStart==nil ? "Conectando…":"Buscando gravação…"
+        do{try p.run()}catch{feed?.stop();throw error}
+        self.process=p;self.pipe=pipe;self.serviceFeed=feed;status=source.replayStart==nil ? "Conectando…":"Buscando gravação…"
+        feed?.start{[weak self] message in DispatchQueue.main.async{
+            guard let self,self.generation==token else{return};self.serviceError=message;self.status=message;self.active=false
+        }}
         Task { [weak self] in
             try? await Task.sleep(nanoseconds:20_000_000_000)
             guard let self,self.generation==token,self.image==nil else{return}
-            self.stopVideo();self.status="Sem imagem após 20 s. Confira o endereço RTSP, acesso e codec."
+            self.stopVideo();self.status=self.source.service==nil ? "Sem imagem após 20 s. Confira o endereço RTSP, acesso e codec.":"Sem imagem após 20 s. O vídeo de serviço pode usar uma variante ainda não compatível."
         }
     }
     func stopVideo() {
         generation=UUID();pipe?.fileHandleForReading.readabilityHandler=nil
+        serviceFeed?.stop();serviceFeed=nil
         if let p=process,p.isRunning {p.terminate()}
         process=nil;pipe=nil;active=false;audio?.stop();audio=nil;audioEnabled=false
     }
@@ -150,6 +171,7 @@ final class AudioMonitor {
     private let node=AVAudioPlayerNode()
     private var process:Process?
     private var pipe:Pipe?
+    private var serviceFeed:ServiceMediaFeed?
     private let queue=DispatchQueue(label:"vigia.audio")
     private var pending=Data()
     private let lock=NSLock()
@@ -160,6 +182,8 @@ final class AudioMonitor {
         try engine.start();node.play()
         let p=try MediaBackend.process(["-nostdin"]+source.arguments(realtime:true)+["-vn","-ac","2","-ar","48000","-c:a","pcm_s16le","-f","s16le","pipe:1"])
         let pipe=Pipe();p.standardOutput=pipe;p.standardError=FileHandle.nullDevice
+        let feed=try source.service.map{try ServiceMediaFeed(source:$0)}
+        if let feed{p.standardInput=feed.pipe}
         pipe.fileHandleForReading.readabilityHandler={ [weak self] handle in
             let data=handle.availableData;if data.isEmpty {handle.readabilityHandler=nil;return}
             self?.queue.async { [weak self] in
@@ -181,8 +205,10 @@ final class AudioMonitor {
                 }
             }
         }
-        try p.run();self.process=p;self.pipe=pipe
+        do{try p.run()}catch{feed?.stop();throw error}
+        self.process=p;self.pipe=pipe;serviceFeed=feed
+        feed?.start{[weak self] _ in DispatchQueue.main.async{self?.stop()}}
     }
-    func stop(){pipe?.fileHandleForReading.readabilityHandler=nil;if let p=process,p.isRunning{p.terminate()};node.stop();engine.stop();process=nil;pipe=nil}
+    func stop(){pipe?.fileHandleForReading.readabilityHandler=nil;serviceFeed?.stop();serviceFeed=nil;if let p=process,p.isRunning{p.terminate()};node.stop();engine.stop();process=nil;pipe=nil}
     deinit{stop()}
 }

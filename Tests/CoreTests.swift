@@ -68,6 +68,13 @@ import CryptoKit
         var removedChannel=camera;removedChannel.channels=[]
         try state.upsert(removedChannel,password:"test-secret")
         try require(state.config.slots.isEmpty,"Editing channels removes stale mosaic references")
+        try serviceChecks()
+        if let index=CommandLine.arguments.firstIndex(of:"--service-port"),index+1<CommandLine.arguments.count,let port=Int(CommandLine.arguments[index+1]) {
+            try await serviceIntegration(port:port)
+            if let media=CommandLine.arguments.firstIndex(of:"--media-directory"),media+1<CommandLine.arguments.count {
+                try await serviceMediaIntegration(port:port,directory:URL(fileURLWithPath:CommandLine.arguments[media+1]))
+            }
+        }
         if CommandLine.arguments.contains("--fixture") {
             let client=ONVIFClient(camera:camera,password:"")
             let configured=try await client.services()

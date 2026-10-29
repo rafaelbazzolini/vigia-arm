@@ -8,6 +8,7 @@ struct Channel: Codable, Identifiable, Equatable {
     var name: String
     var uri: String
     var profileToken: String = ""
+    var serviceIndex: Int?
 }
 struct Camera: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -23,6 +24,8 @@ struct Camera: Codable, Identifiable, Equatable {
     var recordingEndpoint = ""
     var replayEndpoint = ""
     var searchEndpoint = ""
+    // Optional for backward-compatible decoding of existing version-1 backups.
+    var service: ServiceSettings?
     var deviceEndpoint: String { "\(tls ? "https" : "http")://\(host.contains(":") ? "[\(host)]" : host):\(httpPort)/onvif/device_service" }
     func validate() throws {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 160,
@@ -32,7 +35,21 @@ struct Camera: Codable, Identifiable, Equatable {
               channels.count <= 256, Set(channels.map(\.id)).count == channels.count else {
             throw AppError.message("Confira o nome, endereço, portas e canais do equipamento.")
         }
+        if let service {
+            guard (1...65535).contains(service.port), service.channelNames.count <= 255,
+                  service.channelNames.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 160 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }) else {
+                throw AppError.message("Porta de serviço ou lista de canais inválida.")
+            }
+        }
         for channel in channels {
+            if let index=channel.serviceIndex {
+                guard service != nil,(0..<255).contains(index),channel.uri.isEmpty,channel.profileToken.isEmpty,
+                      !channel.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,channel.name.count<=160,
+                      !channel.name.unicodeScalars.contains(where:{CharacterSet.controlCharacters.contains($0)}) else{
+                    throw AppError.message("Canal de serviço inválido ou sem porta cadastrada.")
+                }
+                continue
+            }
             guard !channel.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, channel.name.count <= 160, channel.uri.count <= 4096,
                   let u = URLComponents(string: channel.uri), ["rtsp", "rtsps"].contains(u.scheme?.lowercased() ?? ""),
                   u.host?.lowercased() == host.lowercased(), u.user == nil, u.password == nil,
@@ -40,6 +57,18 @@ struct Camera: Codable, Identifiable, Equatable {
                 throw AppError.message("O endereço RTSP deve pertencer ao equipamento e não conter senhas ou tokens. Use os campos de acesso.")
             }
         }
+    }
+    mutating func applyServiceInventory(_ names:[String])throws{
+        guard service != nil else{throw AppError.message("Cadastre a porta de serviço antes dos canais.")}
+        var updated=self
+        updated.service?.channelNames=names
+        updated.channels.removeAll{$0.serviceIndex != nil}
+        updated.channels += names.enumerated().map{index,name in
+            var value=Channel(name:name,uri:"",serviceIndex:index)
+            if let old=channels.first(where:{$0.serviceIndex==index}){value.id=old.id}
+            return value
+        }
+        try updated.validate();self=updated
     }
     func authenticatedURI(_ uri: String, password: String) throws -> String {
         guard var u = URLComponents(string: uri), ["rtsp","rtsps"].contains(u.scheme ?? ""),

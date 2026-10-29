@@ -10,6 +10,7 @@ def main():
     parser.add_argument('--out',type=Path,default=Path('build-app'))
     parser.add_argument('--dev-data',type=Path)
     args=parser.parse_args();root=Path(__file__).resolve().parents[1]
+    version=(root/'VERSION').read_text().strip()
     out=args.out.resolve();backend=args.backend.resolve()
     for name in ['ffmpeg','ffprobe','COPYING.LGPLv2.1','BUILD.json','ffmpeg-8.1.2-vigia-source.tar.gz']:
         if not (backend/name).is_file():raise SystemExit('Missing media input: '+name)
@@ -23,6 +24,8 @@ def main():
     for name in ['COPYING.LGPLv2.1','BUILD.json']:shutil.copy2(backend/name,contents/'Resources/Licenses'/name)
     for name in ['LICENSE','THIRD_PARTY_NOTICES.md','README.md']:
         if (root/name).exists():shutil.copy2(root/name,contents/'Resources/Licenses'/name)
+    shutil.copytree(root/'LICENSES',contents/'Resources/Licenses/References',dirs_exist_ok=True)
+    shutil.copy2(root/'docs/SERVICE_PORT.md',contents/'Resources/Licenses/SERVICE_PORT.md')
     iconset=out/'AppIcon.iconset'
     run(['xcrun','swift','-module-cache-path','/tmp/vigia-swift-cache',root/'scripts/Icon.swift',iconset])
     # ICNS supports PNG payloads at these standard sizes; package losslessly.
@@ -33,6 +36,9 @@ def main():
     (contents/'Resources/AppIcon.icns').write_bytes(b'icns'+struct.pack('>I',len(payload)+8)+payload)
     info={'CFBundleName':'Vigia ARM','CFBundleDisplayName':'Vigia ARM','CFBundleExecutable':'VigiaARM','CFBundleIdentifier':'io.github.rafaelbazzolini.vigia-arm','CFBundlePackageType':'APPL','CFBundleVersion':'1.0.0','CFBundleShortVersionString':'1.0.0','CFBundleIconFile':'AppIcon.icns','LSMinimumSystemVersion':'14.0','NSHighResolutionCapable':True,'NSLocalNetworkUsageDescription':'Descobrir e acessar as câmeras e gravadores cadastrados por você.','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True}}
     if args.dev_data:info['VigiaDataDirectory']=str(args.dev_data.resolve())
+    info['CFBundleVersion']=version.split('-beta.')[-1] if '-beta.' in version else '1'
+    info['CFBundleShortVersionString']=version.split('-')[0]
+    info['VigiaVersion']=version
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     # Ad-hoc signature for integrity of the local bundle; not Developer ID/notarization.
     for name in ['ffmpeg','ffprobe']:run(['/usr/bin/codesign','--force','--sign','-',contents/'Helpers'/name])
